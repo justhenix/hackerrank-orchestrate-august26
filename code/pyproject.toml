@@ -8,7 +8,9 @@ version = "0.1.0"
 description = "Architecture v0.1 deterministic router integration plumbing"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "google-genai>=1.64.0,<2",
+]
 
 [project.scripts]
 notification-router = "notification_router.main:main"

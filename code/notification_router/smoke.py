@@ -162,7 +162,7 @@ def run_smoke(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset-dir", type=Path, default=Path("../dataset"))
-    parser.add_argument("--provider", choices=("fake", "http-json"))
+    parser.add_argument("--provider", choices=("fake", "http-json", "gemini"))
     parser.add_argument("--enable-api", action="store_true")
     parser.add_argument("--max-cost-usd", type=float)
     parser.add_argument("--log-file", type=Path)

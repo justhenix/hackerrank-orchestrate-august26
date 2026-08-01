@@ -82,6 +82,95 @@ MAX_REASON_WORDS = 24
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
+def extraction_response_schema() -> dict[str, object]:
+    """Return the provider-facing JSON Schema for ``ExtractionRecord``."""
+
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "media_id": {"type": "string"},
+            "content_sha256": {
+                "anyOf": [
+                    {"type": "string", "pattern": _SHA256_RE.pattern[1:-1]},
+                    {"type": "null"},
+                ]
+            },
+            "declared_path": {"type": "string"},
+            "detected_format": {"type": "string", "enum": sorted(MEDIA_FORMAT_VALUES)},
+            "media_state": {"type": "string", "enum": sorted(EXTRACTION_STATE_VALUES)},
+            "extractor_name": {"type": "string"},
+            "extractor_version": {"type": "string"},
+            "extractor_config_sha256": {
+                "type": "string",
+                "pattern": _SHA256_RE.pattern[1:-1],
+            },
+            "extraction_schema_version": {"type": "string"},
+            "extracted_text": {"type": "string"},
+            "factual_description": {"type": "string"},
+            "language": {"type": "string"},
+            "quality_score": {"type": "number", "minimum": 0, "maximum": 1},
+            "quality_reasons": {"type": "array", "items": {"type": "string"}},
+            "created_at": {"type": "string"},
+        },
+        "required": list(EXTRACTION_RECORD_KEYS),
+    }
+
+
+def routing_response_schema() -> dict[str, object]:
+    """Return the provider-facing JSON Schema for ``RawRoutingDecision``."""
+
+    semantic_support_item = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "flag": {"type": "string", "enum": sorted(SEMANTIC_FLAG_KEYS)},
+            "source_field": {
+                "type": "string",
+                "enum": sorted(SEMANTIC_SOURCE_FIELDS),
+            },
+            "start_char": {"type": "integer", "minimum": 0},
+            "end_char_exclusive": {"type": "integer", "minimum": 0},
+        },
+        "required": list(SEMANTIC_SUPPORT_KEYS),
+    }
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "action": {"type": "string", "enum": sorted(ACTION_VALUES)},
+            "message_type": {"type": "string", "enum": sorted(MESSAGE_TYPE_VALUES)},
+            "reason": {"type": "string", "maxLength": MAX_REASON_CHARS},
+            "selected_evidence_message_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "maxItems": MAX_EVIDENCE_IDS,
+            },
+            "routing_uncertainty": {"type": "number", "minimum": 0, "maximum": 1},
+            "uncertainty_reasons": {"type": "array", "items": {"type": "string"}},
+            "semantic_flags": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {flag: {"type": "boolean"} for flag in SEMANTIC_FLAG_KEYS},
+                "required": list(SEMANTIC_FLAG_KEYS),
+            },
+            "deadline_at": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+            },
+            "semantic_support": {
+                "type": "array",
+                "items": semantic_support_item,
+                "maxItems": len(SEMANTIC_FLAG_KEYS),
+            },
+            "reported_contradictory_signal_count": {
+                "type": "integer",
+                "minimum": 0,
+            },
+        },
+        "required": list(ROUTING_RESPONSE_KEYS),
+    }
+
+
 class StructuredOutputError(ValueError):
     """Raised when provider output violates a frozen structured contract."""
 

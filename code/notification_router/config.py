@@ -11,6 +11,10 @@ class IntegrationConfigError(ValueError):
     """Raised when integration configuration is missing or unsafe."""
 
 
+GEMINI_BACKEND_VALUES = frozenset({"vertex", "ai-studio"})
+GEMINI_VERTEX_AUTH_VALUES = frozenset({"adc", "service-account"})
+
+
 def _env_value(environ: Mapping[str, str], name: str, default: str) -> str:
     value = environ.get(name, default)
     if value == "":
@@ -60,6 +64,12 @@ class IntegrationConfig:
     credential_env_var: str = "NOTIFICATION_ROUTER_API_KEY"
     extraction_url: str | None = None
     routing_url: str | None = None
+    gemini_backend: str | None = None
+    gemini_api_key_env_var: str = "NOTIFICATION_ROUTER_GEMINI_API_KEY"
+    gemini_vertex_project: str | None = None
+    gemini_vertex_location: str | None = None
+    gemini_vertex_auth: str = "adc"
+    gemini_vertex_credentials_file: str | None = None
     timeout_seconds: float = 30.0
     max_retries: int = 1
     retry_backoff_seconds: float = 0.0
@@ -70,9 +80,33 @@ class IntegrationConfig:
     output_cost_per_1k_tokens: float = 0.0
 
     def __post_init__(self) -> None:
-        for name in ("provider_name", "extraction_model", "routing_model", "credential_env_var"):
+        for name in (
+            "provider_name",
+            "extraction_model",
+            "routing_model",
+            "credential_env_var",
+            "gemini_api_key_env_var",
+            "gemini_vertex_auth",
+        ):
             if not isinstance(getattr(self, name), str) or not getattr(self, name).strip():
                 raise IntegrationConfigError(f"{name} must be nonempty")
+        if self.gemini_backend is not None and self.gemini_backend not in GEMINI_BACKEND_VALUES:
+            raise IntegrationConfigError(
+                "gemini_backend must be one of: " + ", ".join(sorted(GEMINI_BACKEND_VALUES))
+            )
+        if self.gemini_vertex_auth not in GEMINI_VERTEX_AUTH_VALUES:
+            raise IntegrationConfigError(
+                "gemini_vertex_auth must be one of: "
+                + ", ".join(sorted(GEMINI_VERTEX_AUTH_VALUES))
+            )
+        for name in (
+            "gemini_vertex_project",
+            "gemini_vertex_location",
+            "gemini_vertex_credentials_file",
+        ):
+            value = getattr(self, name)
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise IntegrationConfigError(f"{name} must be nonempty or null")
         if self.timeout_seconds <= 0 or self.timeout_seconds > 300:
             raise IntegrationConfigError("timeout_seconds must be in (0, 300]")
         if not 0 <= self.max_retries <= 5:
@@ -114,6 +148,30 @@ class IntegrationConfig:
             ),
             extraction_url=env.get("NOTIFICATION_ROUTER_EXTRACTION_URL") or None,
             routing_url=env.get("NOTIFICATION_ROUTER_ROUTING_URL") or None,
+            gemini_backend=env.get("NOTIFICATION_ROUTER_GEMINI_BACKEND") or None,
+            gemini_api_key_env_var=_env_value(
+                env,
+                "NOTIFICATION_ROUTER_GEMINI_API_KEY_ENV",
+                "NOTIFICATION_ROUTER_GEMINI_API_KEY",
+            ),
+            gemini_vertex_project=(
+                env.get("NOTIFICATION_ROUTER_GEMINI_VERTEX_PROJECT")
+                or env.get("GOOGLE_CLOUD_PROJECT")
+                or None
+            ),
+            gemini_vertex_location=(
+                env.get("NOTIFICATION_ROUTER_GEMINI_VERTEX_LOCATION")
+                or env.get("GOOGLE_CLOUD_LOCATION")
+                or None
+            ),
+            gemini_vertex_auth=_env_value(
+                env, "NOTIFICATION_ROUTER_GEMINI_VERTEX_AUTH", "adc"
+            ),
+            gemini_vertex_credentials_file=(
+                env.get("NOTIFICATION_ROUTER_GEMINI_VERTEX_CREDENTIALS_FILE")
+                or env.get("GOOGLE_APPLICATION_CREDENTIALS")
+                or None
+            ),
             timeout_seconds=_parse_float(
                 env.get("NOTIFICATION_ROUTER_TIMEOUT_SECONDS", "30"),
                 name="NOTIFICATION_ROUTER_TIMEOUT_SECONDS",
@@ -175,6 +233,14 @@ class IntegrationConfig:
             "credential_env_var": self.credential_env_var,
             "extraction_endpoint_configured": self.extraction_url is not None,
             "routing_endpoint_configured": self.routing_url is not None,
+            "gemini_backend": self.gemini_backend,
+            "gemini_api_key_env_var": self.gemini_api_key_env_var,
+            "gemini_vertex_project": self.gemini_vertex_project,
+            "gemini_vertex_location": self.gemini_vertex_location,
+            "gemini_vertex_auth": self.gemini_vertex_auth,
+            "gemini_vertex_credentials_file_configured": (
+                self.gemini_vertex_credentials_file is not None
+            ),
             "timeout_seconds": self.timeout_seconds,
             "max_retries": self.max_retries,
             "retry_backoff_seconds": self.retry_backoff_seconds,

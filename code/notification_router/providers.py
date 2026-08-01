@@ -439,11 +439,24 @@ def build_provider_bundle(
     config: IntegrationConfig,
     *,
     environ: Mapping[str, str] | None = None,
+    gemini_client_factory: Callable[..., object] | None = None,
+    gemini_credentials_loader: Callable[..., object] | None = None,
+    gemini_sdk: tuple[object, object] | None = None,
 ) -> ProviderBundle:
-    """Build fake providers by default; refuse live providers while disabled."""
+    """Build fake, generic HTTP, or explicitly selected Gemini providers."""
 
     if config.provider_name == "fake":
         return ProviderBundle(FakeMultimodalProvider(), FakeTextRoutingProvider())
+    if config.provider_name == "gemini":
+        from .gemini import build_gemini_provider_bundle
+
+        return build_gemini_provider_bundle(
+            config,
+            environ=environ,
+            client_factory=gemini_client_factory,
+            credentials_loader=gemini_credentials_loader,
+            sdk=gemini_sdk,
+        )
     if config.provider_name != "http-json":
         raise ProviderConfigurationError(f"unknown provider {config.provider_name!r}")
     if not config.api_enabled:
