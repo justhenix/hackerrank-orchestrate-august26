@@ -128,3 +128,27 @@ Before submitting, confirm:
 - `output.csv` has one row per row in `dataset/messages.csv`.
 - `output.csv` has the exact required columns in the exact required order.
 - Your runnable code and setup instructions are included in `code.zip`.
+
+## Architecture v0.1 Milestone 1
+
+The current implementation is intentionally limited to deterministic data
+contracts and diagnostics. It validates the participant CSVs, builds explicit
+normalized joins, exposes strictly-prior history views, and identifies media
+formats from byte signatures. It does not route messages or write predictions.
+
+The standalone submission package lives entirely under `code/`. From that
+directory, install and run diagnostics with:
+
+```text
+python -m pip install -r requirements.txt
+python -m pip install -e .
+python main.py --dataset-dir ../dataset
+```
+
+Dataset timestamps are compared as local naive wall-clock values without
+inferring or converting a geographic timezone. Run the test suite from inside
+`code/` with:
+
+```text
+python -m unittest discover -s tests -v
+```
