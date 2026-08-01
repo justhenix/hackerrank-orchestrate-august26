@@ -1,0 +1,333 @@
+version: 1
+policy:
+  synthetic_only: true
+  production_message_ids_forbidden: true
+  expected_label_patches_forbidden: true
+  every_rule_requires_negative_control: true
+  non_contract_numeric_configuration: provisional_v0
+
+cases:
+  - id: schema_duplicate_incoming_id
+    stage: S1
+    given: two incoming rows share a synthetic message_id
+    expect:
+      error: DUPLICATE_KEY
+      run_aborted: true
+
+  - id: schema_conditional_group_reference
+    stage: S1
+    given: a group message has no group_id
+    expect:
+      error: CONDITIONAL_FIELD_INVALID
+      run_aborted: true
+
+  - id: temporal_future_history_excluded
+    stage: S2
+    given: a same-user historical row is later than the incoming row
+    expect:
+      candidate_included: false
+      evidence_allowed: false
+
+  - id: temporal_same_timestamp_excluded
+    stage: S2
+    given: a same-user historical row has the same timestamp as incoming
+    expect:
+      candidate_included: false
+      evidence_allowed: false
+
+  - id: optional_business_relationship_unknown
+    stage: S2
+    given: a valid business message has no user_business_history row
+    expect:
+      context_state: unknown
+      automatically_untrusted: false
+      automatically_opted_out: false
+
+  - id: image_extension_png_bytes
+    stage: S3
+    given: a file named synthetic.jpg begins with a valid PNG signature
+    expect:
+      detected_format: png
+      decoder_selected_by_extension: false
+
+  - id: image_extension_avif_bytes
+    stage: S3
+    given: a file named synthetic.jpg contains a valid AVIF container
+    expect:
+      detected_format: avif
+      unsupported_if_decoder_absent: true
+
+  - id: audio_extension_wave_bytes
+    stage: S3
+    given: a file named synthetic.mp3 contains valid RIFF/WAVE PCM
+    expect:
+      detected_format: wav
+      decoder_selected_by_extension: false
+
+  - id: audio_extension_m4a_bytes
+    stage: S3
+    given: a file named synthetic.mp3 contains a valid MP4 M4A ftyp box
+    expect:
+      detected_format: m4a
+      decoder_selected_by_extension: false
+
+  - id: media_missing_with_text
+    stage: S3
+    given: image metadata references an absent file and message_text is usable
+    expect:
+      media_state: missing
+      routing_continues: true
+      invented_description: false
+      confidence_cap:
+        status: provisional_v0
+        value: 0.55
+
+  - id: voice_decode_failed_without_text
+    stage: S3
+    given: voice decoding fails and message_text is empty
+    expect:
+      media_state: decode_failed
+      invented_transcript: false
+      confidence_cap:
+        status: provisional_v0
+        value: 0.40
+
+  - id: extraction_empty_not_decode_failure
+    stage: S3
+    given: decoding succeeds but extractor returns no semantic content
+    expect:
+      media_state: empty_extraction
+      error_not_equal: MEDIA_DECODE_FAILED
+
+  - id: extraction_low_quality_preserved
+    stage: S3
+    given: extraction returns content below configured quality threshold
+    expect:
+      media_state: low_quality
+      extracted_content_preserved: true
+      confidence_cap:
+        status: provisional_v0
+        value: 0.72
+
+  - id: cache_content_change_invalidates
+    stage: S3
+    given: identical media_id points to changed bytes
+    expect:
+      cache_hit: false
+
+  - id: cache_extractor_version_invalidates
+    stage: S3
+    given: bytes are unchanged but extractor version changes
+    expect:
+      cache_hit: false
+
+  - id: safety_single_risk_word_negative_control
+    stage: S4
+    given: trusted transactional text contains one risk-associated word without identity anomaly
+    expect:
+      required_action: null
+      mute_forced: false
+
+  - id: safety_corroborated_identity_and_secret_request
+    stage: S4
+    given: unverified sender uses a young mismatched domain and requests a secret credential
+    expect:
+      required_action: mute
+      invariant: INV-101
+
+  - id: safety_verified_transaction_negative_control
+    stage: S4
+    given: verified official-domain business sends an established transaction update without credential request
+    expect:
+      required_action: null
+      scam_forced: false
+
+  - id: safety_quoted_warning_negative_control
+    stage: S8
+    given: a message quotes a risky request as a warning, has a valid warning span, and does not address the receiver
+    expect:
+      required_action: null
+      scam_forced: false
+
+  - id: safety_flag_without_span_rejected
+    stage: S8
+    given: the model sets credential_or_secret_request true without a valid source span
+    expect:
+      error: SEMANTIC_FLAG_CONTRADICTION
+      bounded_retry: true
+
+  - id: promotion_optout_positive
+    stage: S8
+    given: optout predates message and semantic flags say promotional true and transactional false
+    expect:
+      required_action: mute
+      invariant: INV-102
+
+  - id: promotion_optout_transaction_negative_control
+    stage: S8
+    given: optout exists but semantic flags say transactional true
+    expect:
+      promotion_mute_forced: false
+
+  - id: quiet_hours_ordinary_message
+    stage: S4
+    given: message arrives in user quiet hours without time-critical trusted exception
+    expect:
+      prohibited_action: notify
+      mute_forced: false
+
+  - id: deterministic_exact_user_id_mention
+    stage: S4
+    given: message text contains the exact bounded ASCII token for the incoming synthetic user ID
+    expect:
+      explicit_user_id_mention: true
+      detected_by_model: false
+
+  - id: user_id_mention_substring_negative_control
+    stage: S4
+    given: the incoming synthetic user ID appears only inside a longer alphanumeric token
+    expect:
+      explicit_user_id_mention: false
+
+  - id: user_id_indirect_address_negative_control
+    stage: S8
+    given: model marks indirect addressing but no exact bounded user ID mention or trusted relationship exists
+    expect:
+      quiet_hours_bypassed: false
+      muted_group_bypassed: false
+
+  - id: extracted_user_id_mention_negative_control
+    stage: S8
+    given: exact synthetic user ID token appears only in model-extracted media text
+    expect:
+      explicit_user_id_mention: false
+      quiet_hours_bypassed: false
+      muted_group_bypassed: false
+
+  - id: quiet_hours_trusted_urgent_exception
+    stage: S8
+    given: message arrives in quiet hours with near_term true and deterministic exact user ID mention
+    expect:
+      notify_prohibited_by_quiet_hours: false
+
+  - id: muted_group_ordinary_message
+    stage: S4
+    given: exact user-group membership is muted and no urgent exact-mention exception exists
+    expect:
+      prohibited_action: notify
+      mute_forced: false
+
+  - id: muted_group_direct_urgent_exception
+    stage: S8
+    given: muted group message is time-critical and contains deterministic exact user ID mention
+    expect:
+      notify_prohibited_by_group_mute: false
+
+  - id: retrieval_cross_user_excluded
+    stage: S5
+    given: semantically similar history belongs to another user
+    expect:
+      candidate_included: false
+      evidence_allowed: false
+
+  - id: retrieval_empty_is_valid
+    stage: S5
+    given: no prior same-user history satisfies candidate rules
+    expect:
+      error: NO_CANDIDATES
+      allowlist: []
+      routing_continues: true
+
+  - id: retrieval_embedding_fallback
+    stage: S5
+    given: embedding provider fails
+    expect:
+      fallback: RETRIEVAL_NON_EMBEDDING
+      uses_relationship_recency_behavior: true
+      confidence_penalty:
+        status: provisional_v0
+        value: 0.04
+
+  - id: router_fabricated_evidence
+    stage: S8
+    given: model selects a synthetic ID absent from the supplied allowlist
+    expect:
+      error: EVIDENCE_NOT_ALLOWED
+      silently_converted_to_none: false
+      bounded_retry: true
+
+  - id: router_invalid_schema
+    stage: S7
+    given: model returns invalid action enum and excessive reason
+    expect:
+      error: ROUTER_SCHEMA_INVALID
+      repair_attempts_max:
+        status: provisional_v0
+        value: 1
+
+  - id: confidence_uncertainty_monotonic
+    stage: S8
+    given: two otherwise identical decisions differ only in routing uncertainty
+    expect:
+      higher_uncertainty_confidence_not_greater: true
+
+  - id: confidence_missing_context_monotonic
+    stage: S8
+    given: two otherwise identical decisions differ only by missing relationship context
+    expect:
+      missing_context_confidence_not_greater: true
+
+  - id: confidence_contradictions_monotonic
+    stage: S8
+    given: contradiction count increases with all other inputs fixed
+    expect:
+      confidence_not_greater: true
+
+  - id: output_unknown_evidence_serialization
+    stage: S9
+    given: validated selected evidence list is empty
+    expect:
+      evidence_message_ids: none
+
+  - id: output_exact_id_coverage
+    stage: S9
+    given: one target prediction is missing
+    expect:
+      error: OUTPUT_ID_SET_INVALID
+      publication_blocked: true
+
+  - id: output_duplicate_id
+    stage: S9
+    given: two predictions share an incoming ID
+    expect:
+      error: OUTPUT_DUPLICATE_ID
+      publication_blocked: true
+
+  - id: evaluation_labels_isolated
+    stage: S1
+    given: evaluator reads a labeled sample row
+    expect:
+      router_visible_columns:
+        status: contract
+        value: 11
+      label_columns_visible_to_router: false
+
+  - id: evaluation_target_not_history
+    stage: S2
+    given: multiple target rows are processed sequentially
+    expect:
+      earlier_target_available_as_history: false
+
+  - id: baseline_immutable
+    stage: S9
+    given: a process attempts to overwrite a completed raw baseline artifact
+    expect:
+      error: BASELINE_MUTATION_ATTEMPT
+      evaluation_stopped: true
+
+  - id: no_message_specific_patch
+    stage: S9
+    given: runtime configuration contains a branch keyed by a production message ID or expected label
+    expect:
+      conformance_failed: true
+      publication_blocked: true
