@@ -8,6 +8,7 @@ from types import MappingProxyType
 from typing import Mapping
 
 from .artifacts import canonical_hash, canonical_json_bytes, freeze_json, thaw_json
+from .contracts import EXTRACTION_STATE_VALUES, ExtractionRecord
 from .inputs import SanitizedMessage
 from .media import MediaSniffResult, sniff_dataset_media
 from .models import DatasetTables, NormalizedDataset
@@ -39,7 +40,11 @@ def _time_window(value: object) -> str:
     return f"{value.start.isoformat(timespec='minutes')}-{value.end.isoformat(timespec='minutes')}"
 
 
-def _media_state(result: MediaSniffResult) -> str:
+def _media_state(
+    result: MediaSniffResult, extraction_record: ExtractionRecord | None = None
+) -> str:
+    if extraction_record is not None:
+        return extraction_record.media_state
     if result.signature_state == "recognized":
         return "ok"
     if result.signature_state == "missing":
@@ -191,6 +196,7 @@ def assemble_routing_packet(
     retrieval: RetrievalResult,
     *,
     media_results: tuple[MediaSniffResult, ...] | None = None,
+    extraction_records: tuple[ExtractionRecord, ...] | None = None,
 ) -> RoutingPacket:
     """Assemble the M2 packet; no model, OCR, ASR, or confidence code runs."""
 
@@ -198,16 +204,30 @@ def assemble_routing_packet(
     if media_results is None:
         media_results = sniff_dataset_media(tables)
     media_by_id = {result.media_id: result for result in media_results}
+    extraction_by_id = {
+        record.media_id: record for record in (extraction_records or ())
+    }
     if message.media_type is None:
+        if extraction_by_id:
+            raise PacketValidationError("text-only packet cannot contain extraction records")
         media = {"media_state": "not_applicable", "record": None}
     else:
         if message.media_id not in media_by_id:
             raise PacketValidationError("media reference is absent from the sniff report")
         media_result = media_by_id[message.media_id]
-        media = {
-            "media_state": _media_state(media_result),
-            "record": _media_record(media_result),
-        }
+        extraction_record = extraction_by_id.get(message.media_id)
+        if extraction_record is not None:
+            if extraction_record.declared_path != media_result.declared_path:
+                raise PacketValidationError("extraction path does not match sniff metadata")
+            media = {
+                "media_state": _media_state(media_result, extraction_record),
+                "record": extraction_record.as_dict(),
+            }
+        else:
+            media = {
+                "media_state": _media_state(media_result),
+                "record": _media_record(media_result),
+            }
     payload = {
         "contract_version": PACKET_VERSION,
         "message": {
@@ -285,8 +305,11 @@ def validate_routing_packet(
         record = media.get("record")
         if not isinstance(record, Mapping) or record.get("media_id") != message.media_id:
             raise PacketValidationError("media packet record does not match input")
-        if media.get("media_state") not in {"ok", "missing", "unsupported"}:
+        media_state = media.get("media_state")
+        if media_state not in EXTRACTION_STATE_VALUES:
             raise PacketValidationError("media packet has an invalid sniff state")
+        if "media_state" in record and record.get("media_state") != media_state:
+            raise PacketValidationError("media packet record state does not match envelope")
     candidates = payload["historical_candidates"]
     if not isinstance(candidates, (list, tuple)):
         raise PacketValidationError("historical candidates must be an array")

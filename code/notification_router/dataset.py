@@ -28,6 +28,9 @@ from .schemas import REQUIRED_RUNTIME_FILES, load_csv_table
 
 
 DATASET_WALL_CLOCK_POLICY = "dataset-local-naive-wall-clock"
+CONTEXT_RUNTIME_FILES = tuple(
+    filename for filename in REQUIRED_RUNTIME_FILES if filename != "messages.csv"
+)
 
 
 def _message(row: Mapping[str, object]) -> Message:
@@ -539,6 +542,36 @@ def load_dataset(dataset_dir: str | Path) -> DatasetTables:
     if issues:
         raise DatasetValidationError(issues)
 
+    tables = _convert_rows(raw, root)
+    issues = validate_dataset(tables)
+    if issues:
+        raise DatasetValidationError(issues)
+    return tables
+
+
+def load_context_dataset(dataset_dir: str | Path) -> DatasetTables:
+    """Load router context without opening target ``messages.csv``.
+
+    This boundary is intended for development-sample smoke runs. It keeps the
+    target table empty while retaining identity, history, events, and media
+    metadata needed to assemble a packet.
+    """
+
+    root = Path(dataset_dir)
+    if not root.is_dir():
+        raise DatasetValidationError(
+            [ValidationIssue("INPUT_MISSING", table="dataset", detail="dataset directory does not exist")]
+        )
+    root = root.resolve()
+    issues: list[ValidationIssue] = []
+    raw: dict[str, tuple[Mapping[str, object], ...]] = {"messages.csv": ()}
+    for filename in CONTEXT_RUNTIME_FILES:
+        try:
+            raw[filename] = load_csv_table(root / filename, filename)
+        except DatasetValidationError as exc:
+            issues.extend(exc.issues)
+    if issues:
+        raise DatasetValidationError(issues)
     tables = _convert_rows(raw, root)
     issues = validate_dataset(tables)
     if issues:
