@@ -150,7 +150,7 @@ $env:NOTIFICATION_ROUTER_GEMINI_VERTEX_LOCATION="<location>"
 $env:NOTIFICATION_ROUTER_GEMINI_VERTEX_AUTH="adc"
 $env:NOTIFICATION_ROUTER_EXTRACTION_MODEL="<multimodal-model>"
 $env:NOTIFICATION_ROUTER_ROUTING_MODEL="<routing-model>"
-python -m notification_router.smoke --dataset-dir ../dataset --provider gemini --enable-api --max-cost-usd 0.60 --json
+python -m notification_router.smoke --dataset-dir ../dataset --provider gemini --enable-api --env-file ../.env --artifact-dir ../.artifacts/milestone3c --max-cost-usd 0.10 --json
 ```
 
 Later real AI Studio smoke test (PowerShell; replace key/model values):
@@ -162,12 +162,15 @@ $env:NOTIFICATION_ROUTER_GEMINI_BACKEND="ai-studio"
 $env:NOTIFICATION_ROUTER_GEMINI_API_KEY="<set-secret>"
 $env:NOTIFICATION_ROUTER_EXTRACTION_MODEL="<multimodal-model>"
 $env:NOTIFICATION_ROUTER_ROUTING_MODEL="<routing-model>"
-python -m notification_router.smoke --dataset-dir ../dataset --provider gemini --enable-api --max-cost-usd 0.60 --json
+python -m notification_router.smoke --dataset-dir ../dataset --provider gemini --enable-api --env-file ../.env --artifact-dir ../.artifacts/milestone3c --max-cost-usd 0.10 --json
 ```
 
 Both commands remain bounded to one development text, image, and voice
 sample. They never access the sealed holdout or `messages.csv`, and they do
-not write `output.csv`.
+not write `output.csv`. Pass `--env-file ../.env` to load a local switchable
+configuration explicitly. Pass `--artifact-dir ../.artifacts/milestone3c` to
+preserve write-once raw response bytes and bounded smoke metadata; `.env` and
+`.artifacts/` are local-only and ignored.
 
 ## Milestone 2 evaluation boundary
 

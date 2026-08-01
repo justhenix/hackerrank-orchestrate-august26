@@ -21,6 +21,7 @@ ENV/
 *.secret
 
 # Test, tool, cache, temporary, and log artifacts
+.artifacts/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

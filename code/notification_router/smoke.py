@@ -5,10 +5,14 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import re
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+from .artifacts import ImmutableArtifactStore
 from .config import IntegrationConfig, IntegrationConfigError
 from .dataset import load_context_dataset, normalize_dataset
 from .evaluation import EvaluationHarness
@@ -23,6 +27,62 @@ from .inputs import SanitizedMessage
 
 class SmokeConfigurationError(ValueError):
     """Raised when the smoke command would leave the development boundary."""
+
+
+_ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _read_env_file(path: str | Path) -> dict[str, str]:
+    """Read a small dotenv subset without printing or expanding its values."""
+
+    env_path = Path(path)
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        raise SmokeConfigurationError("environment file could not be read") from None
+    values: dict[str, str] = {}
+    for line_number, raw_line in enumerate(lines, start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            raise SmokeConfigurationError(f"environment file line {line_number} is invalid")
+        name, value = line.split("=", 1)
+        name = name.strip()
+        value = value.strip()
+        if not _ENV_NAME_RE.fullmatch(name):
+            raise SmokeConfigurationError(f"environment file line {line_number} has an invalid name")
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        values[name] = value
+    return values
+
+
+def _artifact_run_id() -> str:
+    return datetime.now(timezone.utc).strftime("run-%Y%m%dT%H%M%S.%fZ")
+
+
+def _persist_raw_responses(
+    store: ImmutableArtifactStore | None,
+    *,
+    run_id: str,
+    message_id: str,
+    operation: str,
+    raw_responses: tuple[bytes, ...],
+) -> list[str]:
+    if store is None:
+        return []
+    paths: list[str] = []
+    message_hash = safe_identifier(message_id) or "unknown-message"
+    for attempt, raw_response in enumerate(raw_responses, start=1):
+        relative_path = (
+            f"{run_id}/{message_hash}/{operation}-attempt-{attempt:02d}.json"
+        )
+        store.write_bytes(relative_path, raw_response)
+        paths.append(relative_path)
+    return paths
 
 
 def _sample_path(dataset_dir: Path) -> Path:
@@ -90,6 +150,7 @@ def run_smoke(
     config: IntegrationConfig,
     bundle: ProviderBundle,
     log_file: str | Path | None = None,
+    artifact_dir: str | Path | None = None,
 ) -> dict[str, object]:
     """Process at most one text, image, and voice development sample."""
 
@@ -107,16 +168,36 @@ def run_smoke(
         routing_provider=bundle.routing,
         logger=logger,
     )
+    artifact_store = ImmutableArtifactStore(artifact_dir) if artifact_dir else None
+    artifact_run_id = _artifact_run_id() if artifact_store else None
     output: list[dict[str, object]] = []
     for kind, message in selected:
         sniff_result: MediaSniffResult | None = None
         extraction_result = None
+        extraction_artifacts: list[str] = []
         media_results: tuple[MediaSniffResult, ...] = ()
         if message.media_type is not None:
             sniff_result, media_bytes = _sniff_for_message(root, message, tables)
             media_results = (sniff_result,)
-            extraction_result = client.extract(
-                _extraction_request(message, sniff_result, media_bytes)
+            try:
+                extraction_result = client.extract(
+                    _extraction_request(message, sniff_result, media_bytes)
+                )
+            except IntegrationError as exc:
+                extraction_artifacts = _persist_raw_responses(
+                    artifact_store,
+                    run_id=artifact_run_id or "unassigned-run",
+                    message_id=message.message_id,
+                    operation="extraction",
+                    raw_responses=exc.raw_responses,
+                )
+                raise
+            extraction_artifacts = _persist_raw_responses(
+                artifact_store,
+                run_id=artifact_run_id or "unassigned-run",
+                message_id=message.message_id,
+                operation="extraction",
+                raw_responses=extraction_result.raw_responses,
             )
         retrieval = retrieve_history(message, normalized)
         packet = assemble_routing_packet(
@@ -127,28 +208,82 @@ def run_smoke(
             media_results=media_results,
             extraction_records=(extraction_result.value,) if extraction_result else (),
         )
-        routing_result = client.route(packet)
+        try:
+            routing_result = client.route(packet)
+        except IntegrationError as exc:
+            routing_artifacts = _persist_raw_responses(
+                artifact_store,
+                run_id=artifact_run_id or "unassigned-run",
+                message_id=message.message_id,
+                operation="routing",
+                raw_responses=exc.raw_responses,
+            )
+            del routing_artifacts
+            raise
+        routing_artifacts = _persist_raw_responses(
+            artifact_store,
+            run_id=artifact_run_id or "unassigned-run",
+            message_id=message.message_id,
+            operation="routing",
+            raw_responses=routing_result.raw_responses,
+        )
+        packet_data = packet.as_dict()
+        allowed_evidence = tuple(packet_data["allowed_evidence_message_ids"])
+        selected_evidence = tuple(routing_result.value.selected_evidence_message_ids)
+        extraction_record = extraction_result.value if extraction_result else None
         output.append(
             {
                 "kind": kind,
                 "message_hash": safe_identifier(message.message_id),
+                "detected_media_format": (
+                    sniff_result.detected_format if sniff_result else None
+                ),
+                "media_signature_state": (
+                    sniff_result.signature_state if sniff_result else None
+                ),
                 "media_state": (
-                    packet.as_dict()["media"]["media_state"]
-                    if isinstance(packet.as_dict().get("media"), dict)
+                    packet_data["media"]["media_state"]
+                    if isinstance(packet_data.get("media"), dict)
                     else None
                 ),
+                "extraction": (
+                    {
+                        "schema_valid": True,
+                        "media_state": extraction_record.media_state,
+                        "quality_score": extraction_record.quality_score,
+                        "quality_reasons": list(extraction_record.quality_reasons),
+                        "extracted_text_chars": len(extraction_record.extracted_text),
+                        "factual_description_chars": len(
+                            extraction_record.factual_description
+                        ),
+                    }
+                    if extraction_record
+                    else None
+                ),
+                "routing_packet": {
+                    "validated": True,
+                    "sha256": packet.sha256(),
+                    "bytes": len(packet.prompt_bytes()),
+                },
                 "routing": {
                     "action": routing_result.value.action,
                     "message_type": routing_result.value.message_type,
                     "routing_uncertainty": routing_result.value.routing_uncertainty,
+                    "schema_valid": True,
+                    "selected_evidence_message_ids": list(selected_evidence),
+                    "allowed_evidence_message_ids": list(allowed_evidence),
+                    "evidence_within_allowlist": set(selected_evidence).issubset(
+                        set(allowed_evidence)
+                    ),
                 },
                 "extraction_accounting": (
                     extraction_result.accounting.as_dict() if extraction_result else None
                 ),
                 "routing_accounting": routing_result.accounting.as_dict(),
+                "raw_response_artifacts": extraction_artifacts + routing_artifacts,
             }
         )
-    return {
+    result = {
         "provider": config.provider_name,
         "api_enabled": config.api_enabled,
         "development_samples_processed": len(output),
@@ -157,6 +292,10 @@ def run_smoke(
         "actual_cost_usd": client.total_cost_usd,
         "results": output,
     }
+    if artifact_store is not None:
+        result["artifact_directory"] = str(artifact_store.root)
+        result["artifact_run_id"] = artifact_run_id
+    return result
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -166,6 +305,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--enable-api", action="store_true")
     parser.add_argument("--max-cost-usd", type=float)
     parser.add_argument("--log-file", type=Path)
+    parser.add_argument("--env-file", type=Path)
+    parser.add_argument("--artifact-dir", type=Path)
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -173,7 +314,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        config = IntegrationConfig.from_env()
+        environment = dict(os.environ)
+        if args.env_file is not None:
+            environment.update(_read_env_file(args.env_file))
+        config = IntegrationConfig.from_env(environment)
         changes: dict[str, object] = {}
         if args.provider is not None:
             changes["provider_name"] = args.provider
@@ -187,12 +331,13 @@ def main(argv: list[str] | None = None) -> int:
             raise SmokeConfigurationError(
                 "live providers require --enable-api or NOTIFICATION_ROUTER_API_ENABLED=1"
             )
-        bundle = build_provider_bundle(config)
+        bundle = build_provider_bundle(config, environ=environment)
         result = run_smoke(
             dataset_dir=args.dataset_dir,
             config=config,
             bundle=bundle,
             log_file=args.log_file,
+            artifact_dir=args.artifact_dir,
         )
         print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
         return 0
