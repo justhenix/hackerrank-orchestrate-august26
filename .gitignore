@@ -1,0 +1,49 @@
+# Private/local project material
+personal_note/
+.antigravity/
+.codex/
+
+# Python bytecode and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+ENV/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.secret
+
+# Test, tool, cache, temporary, and log artifacts
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+coverage.xml
+htmlcov/
+*.log
+log.txt
+logs/
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Local build and install artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Common OS/editor metadata
+.DS_Store
+Thumbs.db
