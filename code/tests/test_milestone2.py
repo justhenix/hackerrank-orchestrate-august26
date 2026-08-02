@@ -101,6 +101,10 @@ class MilestoneTwoTests(unittest.TestCase):
             first.allowed_evidence_message_ids,
             tuple(candidate.message_id for candidate in first.candidates),
         )
+        self.assertEqual(
+            tuple(candidate.candidate_rank for candidate in first.candidates),
+            tuple(range(1, len(first.candidates) + 1)),
+        )
 
     def test_retrieval_excludes_same_time_future_and_cross_user_rows(self) -> None:
         incoming = self.harness.router_inputs()[0]
@@ -154,6 +158,19 @@ class MilestoneTwoTests(unittest.TestCase):
                 validate_selected_evidence((first_id,), result.allowed_evidence_message_ids),
                 (first_id,),
             )
+            if len(result.allowed_evidence_message_ids) >= 2:
+                self.assertEqual(
+                    validate_selected_evidence(
+                        result.allowed_evidence_message_ids[:2],
+                        result.allowed_evidence_message_ids,
+                    ),
+                    result.allowed_evidence_message_ids[:2],
+                )
+                with self.assertRaises(EvidenceProvenanceError):
+                    validate_selected_evidence(
+                        result.allowed_evidence_message_ids[1::-1],
+                        result.allowed_evidence_message_ids,
+                    )
             with self.assertRaises(EvidenceProvenanceError):
                 validate_selected_evidence(("not_historical",), result.allowed_evidence_message_ids)
             with self.assertRaises(EvidenceProvenanceError):
@@ -184,6 +201,15 @@ class MilestoneTwoTests(unittest.TestCase):
         envelope = packet.prompt_envelope()
         self.assertIn(incoming.message_text, envelope["routing_packet"]["message"]["message_text"])
         self.assertNotIn(incoming.message_text, json.dumps(envelope["instructions"], sort_keys=True))
+        self.assertIn("candidate_rank", envelope["instructions"]["evidence_contract"])
+        self.assertIn("Do not sort or reorder", envelope["instructions"]["evidence_contract"])
+        self.assertIn("at most one", envelope["instructions"]["semantic_support_contract"])
+        self.assertIn("never duplicate", envelope["instructions"]["semantic_support_contract"])
+        candidates = envelope["routing_packet"]["historical_candidates"]
+        self.assertEqual(
+            [candidate["candidate_rank"] for candidate in candidates],
+            list(range(1, len(candidates) + 1)),
+        )
         self.assertNotIn('"action"', json.dumps(packet.as_dict(), sort_keys=True))
         self.assertNotIn('"message_type"', json.dumps(packet.as_dict(), sort_keys=True))
 

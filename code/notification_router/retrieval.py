@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from types import MappingProxyType
 from typing import Mapping, Protocol
@@ -68,6 +68,7 @@ class RetrievalConfig:
 
 @dataclass(frozen=True, slots=True)
 class HistoricalCandidate:
+    candidate_rank: int
     message_id: str
     user_id: str
     created_at: datetime
@@ -79,6 +80,7 @@ class HistoricalCandidate:
 
     def as_dict(self) -> dict[str, object]:
         return {
+            "candidate_rank": self.candidate_rank,
             "message_id": self.message_id,
             "user_id": self.user_id,
             "created_at": self.created_at.isoformat(sep=" ", timespec="minutes"),
@@ -200,6 +202,7 @@ def retrieve_history(
         )
         candidates.append(
             HistoricalCandidate(
+                candidate_rank=0,
                 message_id=historical.message_id,
                 user_id=historical.user_id,
                 created_at=historical.created_at,
@@ -219,7 +222,12 @@ def retrieve_history(
                 ),
             )
         )
-    ordered = tuple(sorted(candidates, key=_candidate_sort_key)[: config.top_k])
+    ordered = tuple(
+        replace(candidate, candidate_rank=index)
+        for index, candidate in enumerate(
+            sorted(candidates, key=_candidate_sort_key)[: config.top_k], start=1
+        )
+    )
     result = RetrievalResult(
         candidates=ordered,
         allowed_evidence_message_ids=tuple(candidate.message_id for candidate in ordered),
@@ -240,6 +248,9 @@ def validate_evidence_allowlist(
     candidate_ids = tuple(candidate.message_id for candidate in result.candidates)
     if candidate_ids != result.allowed_evidence_message_ids:
         raise EvidenceProvenanceError("allowlist order must equal candidate order")
+    candidate_ranks = tuple(candidate.candidate_rank for candidate in result.candidates)
+    if candidate_ranks != tuple(range(1, len(candidate_ranks) + 1)):
+        raise EvidenceProvenanceError("candidate ranks must be contiguous and canonical")
     if len(candidate_ids) > result.config.top_k:
         raise EvidenceProvenanceError("candidate list exceeds configured top-K")
     if len(set(candidate_ids)) != len(candidate_ids):

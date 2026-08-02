@@ -6,7 +6,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Callable, Generic, Sequence, TypeVar
+from typing import Callable, Generic, Mapping, Sequence, TypeVar
 
 from .config import IntegrationConfig, IntegrationConfigError
 from .contracts import (
@@ -37,6 +37,8 @@ from .telemetry import (
 
 
 T = TypeVar("T")
+RawResponseSink = Callable[[str, str, str, int, Mapping[str, object], bytes], None]
+ValidationErrorSink = Callable[[StructuredOutputError], None]
 
 
 class CostLimitExceeded(RuntimeError):
@@ -104,6 +106,7 @@ class ModelIntegrationClient:
         extraction_provider: MultimodalExtractionProvider,
         routing_provider: TextRoutingProvider,
         logger: RedactedCallLogger | None = None,
+        raw_response_sink: RawResponseSink | None = None,
         monotonic: Callable[[], float] = time.perf_counter,
         sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -116,6 +119,7 @@ class ModelIntegrationClient:
         ):
             raise IntegrationConfigError("API-backed providers require explicit API enablement")
         self.logger = logger or NULL_LOGGER
+        self.raw_response_sink = raw_response_sink
         self._monotonic = monotonic
         self._sleeper = sleeper
         self._ledger = CostLedger(config.cost_limit_usd)
@@ -153,6 +157,7 @@ class ModelIntegrationClient:
         metadata: dict[str, object],
         provider_call: Callable[[], ProviderResponse],
         parser: Callable[[bytes], T],
+        validation_error_sink: ValidationErrorSink | None = None,
     ) -> IntegrationResult[T]:
         call_id = self._call_id(operation)
         provider_name = self._provider_name(provider)
@@ -201,6 +206,15 @@ class ModelIntegrationClient:
                         retryable=False,
                     )
                 raw_responses.append(response.raw_json)
+                if self.raw_response_sink is not None:
+                    self.raw_response_sink(
+                        call_id,
+                        stage,
+                        operation,
+                        attempt,
+                        metadata,
+                        response.raw_json,
+                    )
                 actual_cost = self._cost_for_usage(response.usage)
                 self._ledger.settle(reservation, actual_cost)
                 settled = True
@@ -320,6 +334,8 @@ class ModelIntegrationClient:
                     code=exc.code,
                     detail=str(exc),
                 )
+                if validation_error_sink is not None:
+                    validation_error_sink(exc)
                 if attempt >= self.config.maximum_attempts:
                     break
             except Exception as exc:  # provider adapters must not leak raw errors
@@ -396,7 +412,7 @@ class ModelIntegrationClient:
         )
 
     def route(self, packet: RoutingPacket) -> IntegrationResult[RawRoutingDecision]:
-        request = RoutingRequest(packet)
+        validation_feedback: dict[str, str] | None = None
         packet_value = packet.as_dict()
         allowlist = packet_value.get("allowed_evidence_message_ids", ())
         if not isinstance(allowlist, (list, tuple)):
@@ -421,18 +437,27 @@ class ModelIntegrationClient:
             validate_routing_decision_against_packet(decision, packet_value)
             return decision
 
+        def provider_call() -> ProviderResponse:
+            request = RoutingRequest(packet, validation_feedback=validation_feedback)
+            return self.routing_provider.route(
+                request,
+                model=self.config.routing_model,
+                timeout_seconds=self.config.timeout_seconds,
+            )
+
+        def validation_error_sink(error: StructuredOutputError) -> None:
+            nonlocal validation_feedback
+            validation_feedback = error.as_machine_readable()
+
         return self._invoke(
             stage="S7",
             operation="route",
             model=self.config.routing_model,
             provider=self.routing_provider,
-            metadata=request.redacted_metadata(),
-            provider_call=lambda: self.routing_provider.route(
-                request,
-                model=self.config.routing_model,
-                timeout_seconds=self.config.timeout_seconds,
-            ),
+            metadata=RoutingRequest(packet).redacted_metadata(),
+            provider_call=provider_call,
             parser=parse,
+            validation_error_sink=validation_error_sink,
         )
 
     def extract_batch(

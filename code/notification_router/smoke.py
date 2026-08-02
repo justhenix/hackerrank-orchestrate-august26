@@ -75,14 +75,34 @@ def _persist_raw_responses(
     if store is None:
         return []
     paths: list[str] = []
-    message_hash = safe_identifier(message_id) or "unknown-message"
     for attempt, raw_response in enumerate(raw_responses, start=1):
-        relative_path = (
-            f"{run_id}/{message_hash}/{operation}-attempt-{attempt:02d}.json"
+        relative_path = _persist_raw_response(
+            store,
+            run_id=run_id,
+            message_id=message_id,
+            operation=operation,
+            attempt=attempt,
+            raw_response=raw_response,
         )
-        store.write_bytes(relative_path, raw_response)
         paths.append(relative_path)
     return paths
+
+
+def _persist_raw_response(
+    store: ImmutableArtifactStore | None,
+    *,
+    run_id: str,
+    message_id: str,
+    operation: str,
+    attempt: int,
+    raw_response: bytes,
+) -> str:
+    if store is None:
+        raise SmokeConfigurationError("raw response persistence requires an artifact store")
+    message_hash = safe_identifier(message_id) or "unknown-message"
+    relative_path = f"{run_id}/{message_hash}/{operation}-attempt-{attempt:02d}.json"
+    store.write_bytes(relative_path, raw_response)
+    return relative_path
 
 
 def _sample_path(dataset_dir: Path) -> Path:
@@ -161,15 +181,52 @@ def run_smoke(
     selected = _select_development_samples(development_rows)
     tables = load_context_dataset(root)
     normalized = normalize_dataset(tables)
+    artifact_store = ImmutableArtifactStore(artifact_dir) if artifact_dir else None
+    artifact_run_id = _artifact_run_id() if artifact_store else None
+    persisted_artifacts: dict[tuple[str, str], list[str]] = {}
+
+    def raw_response_sink(
+        call_id: str,
+        stage: str,
+        operation: str,
+        attempt: int,
+        metadata: dict[str, object],
+        raw_response: bytes,
+    ) -> None:
+        del call_id, stage
+        if artifact_store is None or artifact_run_id is None:
+            return
+        artifact_key = next(
+            (
+                value
+                for name in ("message_id", "media_id")
+                if isinstance(value := metadata.get(name), str) and value
+            ),
+            "unknown-message",
+        )
+        relative_path = _persist_raw_response(
+            artifact_store,
+            run_id=artifact_run_id,
+            message_id=artifact_key,
+            operation=operation,
+            attempt=attempt,
+            raw_response=raw_response,
+        )
+        persisted_artifacts.setdefault((artifact_key, operation), []).append(relative_path)
+
+    def artifact_paths(message_id: str | None, operation: str) -> list[str]:
+        if not message_id:
+            return []
+        return list(persisted_artifacts.get((message_id, operation), ()))
+
     logger = RedactedCallLogger(path=log_file) if log_file else None
     client = ModelIntegrationClient(
         config,
         extraction_provider=bundle.extraction,
         routing_provider=bundle.routing,
         logger=logger,
+        raw_response_sink=raw_response_sink,
     )
-    artifact_store = ImmutableArtifactStore(artifact_dir) if artifact_dir else None
-    artifact_run_id = _artifact_run_id() if artifact_store else None
     output: list[dict[str, object]] = []
     for kind, message in selected:
         sniff_result: MediaSniffResult | None = None
@@ -183,22 +240,10 @@ def run_smoke(
                 extraction_result = client.extract(
                     _extraction_request(message, sniff_result, media_bytes)
                 )
-            except IntegrationError as exc:
-                extraction_artifacts = _persist_raw_responses(
-                    artifact_store,
-                    run_id=artifact_run_id or "unassigned-run",
-                    message_id=message.message_id,
-                    operation="extraction",
-                    raw_responses=exc.raw_responses,
-                )
+            except IntegrationError:
+                extraction_artifacts = artifact_paths(message.media_id, "extraction")
                 raise
-            extraction_artifacts = _persist_raw_responses(
-                artifact_store,
-                run_id=artifact_run_id or "unassigned-run",
-                message_id=message.message_id,
-                operation="extraction",
-                raw_responses=extraction_result.raw_responses,
-            )
+            extraction_artifacts = artifact_paths(message.media_id, "extraction")
         retrieval = retrieve_history(message, normalized)
         packet = assemble_routing_packet(
             message,
@@ -210,23 +255,10 @@ def run_smoke(
         )
         try:
             routing_result = client.route(packet)
-        except IntegrationError as exc:
-            routing_artifacts = _persist_raw_responses(
-                artifact_store,
-                run_id=artifact_run_id or "unassigned-run",
-                message_id=message.message_id,
-                operation="routing",
-                raw_responses=exc.raw_responses,
-            )
-            del routing_artifacts
+        except IntegrationError:
+            routing_artifacts = artifact_paths(message.message_id, "routing")
             raise
-        routing_artifacts = _persist_raw_responses(
-            artifact_store,
-            run_id=artifact_run_id or "unassigned-run",
-            message_id=message.message_id,
-            operation="routing",
-            raw_responses=routing_result.raw_responses,
-        )
+        routing_artifacts = artifact_paths(message.message_id, "routing")
         packet_data = packet.as_dict()
         allowed_evidence = tuple(packet_data["allowed_evidence_message_ids"])
         selected_evidence = tuple(routing_result.value.selected_evidence_message_ids)

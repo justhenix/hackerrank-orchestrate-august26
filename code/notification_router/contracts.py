@@ -174,9 +174,28 @@ def routing_response_schema() -> dict[str, object]:
 class StructuredOutputError(ValueError):
     """Raised when provider output violates a frozen structured contract."""
 
-    def __init__(self, message: str, *, code: str = "SCHEMA_INVALID") -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "SCHEMA_INVALID",
+        field: str | None = None,
+        constraint: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
+        self.field = field
+        self.constraint = constraint
+
+    def as_machine_readable(self) -> dict[str, str]:
+        """Return bounded retry feedback without model response content."""
+
+        feedback = {"code": self.code}
+        if self.field is not None:
+            feedback["field"] = self.field
+        if self.constraint is not None:
+            feedback["constraint"] = self.constraint
+        return feedback
 
 
 def _reject_constant(value: str) -> object:
@@ -523,6 +542,8 @@ def parse_routing_decision(
             raise StructuredOutputError(
                 f"semantic_support[{index}].flag is invalid or duplicated",
                 code="SCHEMA_INVALID",
+                field=f"semantic_support[{index}].flag",
+                constraint="unique_flag_support",
             )
         if not flags[flag]:
             raise StructuredOutputError(

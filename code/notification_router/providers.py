@@ -7,11 +7,13 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime
+from types import MappingProxyType
 from typing import Callable, Mapping, Protocol
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
 from .config import IntegrationConfig, IntegrationConfigError
+from .artifacts import canonical_json_bytes
 from .packet import RoutingPacket
 
 
@@ -110,10 +112,27 @@ class ExtractionRequest:
 @dataclass(frozen=True, slots=True)
 class RoutingRequest:
     packet: RoutingPacket
+    validation_feedback: Mapping[str, object] | None = None
+
+    def __post_init__(self) -> None:
+        if self.validation_feedback is not None:
+            if not isinstance(self.validation_feedback, Mapping):
+                raise TypeError("validation_feedback must be a mapping or null")
+            object.__setattr__(
+                self,
+                "validation_feedback",
+                MappingProxyType(dict(self.validation_feedback)),
+            )
 
     @property
     def packet_bytes(self) -> bytes:
-        return self.packet.prompt_bytes()
+        if self.validation_feedback is None:
+            return self.packet.prompt_bytes()
+        envelope = self.packet.prompt_envelope()
+        instructions = dict(envelope["instructions"])
+        instructions["validation_feedback"] = dict(self.validation_feedback)
+        envelope["instructions"] = instructions
+        return canonical_json_bytes(envelope)
 
     def redacted_metadata(self) -> dict[str, object]:
         packet = self.packet.as_dict()

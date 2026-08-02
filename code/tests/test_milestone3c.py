@@ -6,7 +6,17 @@ import unittest
 from pathlib import Path
 
 from notification_router.config import IntegrationConfig
-from notification_router.providers import build_provider_bundle
+from notification_router.dataset import load_context_dataset, normalize_dataset
+from notification_router.evaluation import EvaluationHarness
+from notification_router.integration import IntegrationError, ModelIntegrationClient
+from notification_router.packet import assemble_routing_packet
+from notification_router.providers import (
+    FakeMultimodalProvider,
+    ProviderResponse,
+    TokenUsage,
+    build_provider_bundle,
+)
+from notification_router.retrieval import retrieve_history
 from notification_router.smoke import _read_env_file, run_smoke
 
 
@@ -56,6 +66,51 @@ class MilestoneThreeCTests(unittest.TestCase):
                 )
             )
             self.assertNotIn("messages.csv", " ".join(str(path) for path in files))
+
+    def test_raw_response_sink_writes_before_invalid_output_validation(self) -> None:
+        harness = EvaluationHarness(DATASET / "sample_messages.csv")
+        tables = load_context_dataset(DATASET)
+        normalized = normalize_dataset(tables)
+        message = next(row for row in harness.router_inputs("development") if row.media_type is None)
+        packet = assemble_routing_packet(
+            message,
+            tables,
+            normalized,
+            retrieve_history(message, normalized),
+            media_results=(),
+        )
+        invalid_raw = b'{"unexpected":"shape"}'
+
+        class InvalidRoutingProvider:
+            name = "invalid-test"
+
+            def route(self, request, *, model, timeout_seconds):
+                del request, model, timeout_seconds
+                return ProviderResponse(
+                    raw_json=invalid_raw,
+                    usage=TokenUsage(input_tokens=3, output_tokens=2, total_tokens=5),
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            persisted: list[Path] = []
+
+            def sink(call_id, stage, operation, attempt, metadata, raw_response):
+                del call_id, stage, metadata
+                path = Path(directory) / f"{operation}-{attempt}.json"
+                path.write_bytes(raw_response)
+                persisted.append(path)
+
+            client = ModelIntegrationClient(
+                IntegrationConfig(max_retries=0),
+                extraction_provider=FakeMultimodalProvider(),
+                routing_provider=InvalidRoutingProvider(),
+                raw_response_sink=sink,
+            )
+            with self.assertRaises(IntegrationError) as context:
+                client.route(packet)
+            self.assertEqual(context.exception.code, "SCHEMA_INVALID")
+            self.assertEqual(len(persisted), 1)
+            self.assertEqual(persisted[0].read_bytes(), invalid_raw)
 
 
 if __name__ == "__main__":

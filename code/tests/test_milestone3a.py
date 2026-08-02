@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 from notification_router.config import IntegrationConfig, IntegrationConfigError
 from notification_router.contracts import (
+    MAX_REASON_CHARS,
+    MAX_REASON_WORDS,
     StructuredOutputError,
     parse_extraction_record,
     parse_routing_decision,
@@ -144,6 +146,107 @@ class MilestoneThreeATests(unittest.TestCase):
         duplicate_key = b'{"action":"digest","action":"mute"}'
         with self.assertRaises(StructuredOutputError):
             parse_routing_decision(duplicate_key)
+
+    def test_reason_bound_is_prompted_and_enforced_with_negative_control(self) -> None:
+        _, packet = self._text_packet()
+        instructions = packet.prompt_envelope()["instructions"]
+        response_contract = instructions["response_contract"]
+        self.assertIn(str(MAX_REASON_WORDS), response_contract)
+        self.assertIn(str(MAX_REASON_CHARS), response_contract)
+
+        provider = FakeTextRoutingProvider()
+        request = type("Request", (), {"packet": packet, "packet_bytes": packet.prompt_bytes()})()
+        payload = json.loads(provider.route(request, model="fake", timeout_seconds=1).raw_json)
+        payload["reason"] = " ".join(f"word{index}" for index in range(MAX_REASON_WORDS))
+        valid = parse_routing_decision(
+            json.dumps(payload).encode(),
+            allowed_evidence_message_ids=packet.as_dict()["allowed_evidence_message_ids"],
+        )
+        self.assertEqual(len(valid.reason.split()), MAX_REASON_WORDS)
+
+        payload["reason"] += " overflow"
+        with self.assertRaisesRegex(
+            StructuredOutputError, "reason exceeds the decision contract bounds"
+        ):
+            parse_routing_decision(
+                json.dumps(payload).encode(),
+                allowed_evidence_message_ids=packet.as_dict()["allowed_evidence_message_ids"],
+            )
+
+    def test_semantic_support_allows_one_span_and_rejects_duplicate_flag(self) -> None:
+        _, packet = self._text_packet()
+        provider = FakeTextRoutingProvider()
+        request = type("Request", (), {"packet": packet, "packet_bytes": packet.prompt_bytes()})()
+        payload = json.loads(provider.route(request, model="fake", timeout_seconds=1).raw_json)
+        payload["semantic_flags"]["time_critical"] = True
+        support = {
+            "flag": "time_critical",
+            "source_field": "message_text",
+            "start_char": 0,
+            "end_char_exclusive": 1,
+        }
+        payload["semantic_support"] = [support]
+        valid = parse_routing_decision(
+            json.dumps(payload).encode(),
+            allowed_evidence_message_ids=packet.as_dict()["allowed_evidence_message_ids"],
+        )
+        self.assertEqual(len(valid.semantic_support), 1)
+
+        payload["semantic_support"] = [support, dict(support)]
+        with self.assertRaisesRegex(
+            StructuredOutputError,
+            r"semantic_support\[1\]\.flag is invalid or duplicated",
+        ):
+            parse_routing_decision(
+                json.dumps(payload).encode(),
+                allowed_evidence_message_ids=packet.as_dict()["allowed_evidence_message_ids"],
+            )
+
+    def test_bounded_schema_retry_uses_machine_feedback_and_preserves_attempts(self) -> None:
+        _, packet = self._text_packet()
+        feedbacks: list[object] = []
+        raw_attempts: list[bytes] = []
+
+        def response_factory(request):
+            feedbacks.append(request.validation_feedback)
+            payload = json.loads(
+                FakeTextRoutingProvider()
+                .route(request, model="fake", timeout_seconds=1)
+                .raw_json
+            )
+            payload["semantic_flags"]["time_critical"] = True
+            support = {
+                "flag": "time_critical",
+                "source_field": "message_text",
+                "start_char": 0,
+                "end_char_exclusive": 1,
+            }
+            payload["semantic_support"] = [support, dict(support)] if request.validation_feedback is None else [support]
+            return payload
+
+        provider = FakeTextRoutingProvider(response_factory=response_factory)
+        client = ModelIntegrationClient(
+            IntegrationConfig(max_retries=1),
+            extraction_provider=FakeMultimodalProvider(),
+            routing_provider=provider,
+            raw_response_sink=lambda call_id, stage, operation, attempt, metadata, raw: raw_attempts.append(raw),
+        )
+        result = client.route(packet)
+
+        self.assertEqual(result.accounting.attempt_count, 2)
+        self.assertEqual(provider.calls, 2)
+        self.assertIs(provider.requests[0].packet, provider.requests[1].packet)
+        self.assertIsNone(feedbacks[0])
+        self.assertEqual(
+            dict(feedbacks[1]),
+            {
+                "code": "SCHEMA_INVALID",
+                "field": "semantic_support[1].flag",
+                "constraint": "unique_flag_support",
+            },
+        )
+        self.assertEqual(len(raw_attempts), 2)
+        self.assertTrue(all(json.loads(raw) for raw in raw_attempts))
 
     def test_extraction_provider_output_is_bound_to_media_request(self) -> None:
         image_message = next(
