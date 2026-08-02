@@ -9,6 +9,7 @@ from types import MappingProxyType
 from unittest.mock import patch
 
 import notification_router.dataset as dataset_module
+from notification_router.artifacts import build_label_free_run_manifest
 from notification_router.baseline import (
     BaselineRunnerConfig,
     run_development_baseline,
@@ -206,6 +207,53 @@ class MilestoneFourATests(unittest.TestCase):
                 timeout_seconds=30,
             )
             self.assertNotEqual(identity.key, changed_identity.key)
+
+    def test_explicit_baseline_run_nonce_changes_identity(self) -> None:
+        common = {
+            "partition": "development",
+            "source_file_sha256": "source",
+            "sanitized_input_sha256": "inputs",
+            "split_manifest_sha256": "split",
+            "row_count": 20,
+            "configuration": {"runner": "test"},
+        }
+        deterministic = build_label_free_run_manifest(**common)
+        fresh = build_label_free_run_manifest(**common, run_nonce="fresh-20260802-01")
+        self.assertNotEqual(deterministic.run_id, fresh.run_id)
+        self.assertEqual(fresh.as_dict()["run_nonce"], "fresh-20260802-01")
+
+    def test_baseline_run_nonce_preserves_write_once_and_separates_runs(self) -> None:
+        config = IntegrationConfig()
+        with tempfile.TemporaryDirectory() as artifact_directory, tempfile.TemporaryDirectory() as cache_directory:
+            first = run_development_baseline(
+                dataset_dir=DATASET,
+                config=config,
+                bundle=ProviderBundle(
+                    extraction=FakeMultimodalProvider(),
+                    routing=FakeTextRoutingProvider(),
+                ),
+                runner_config=BaselineRunnerConfig(
+                    artifact_root=Path(artifact_directory),
+                    cache_root=Path(cache_directory),
+                    run_nonce="first",
+                ),
+            )
+            second = run_development_baseline(
+                dataset_dir=DATASET,
+                config=config,
+                bundle=ProviderBundle(
+                    extraction=FakeMultimodalProvider(),
+                    routing=FakeTextRoutingProvider(),
+                ),
+                runner_config=BaselineRunnerConfig(
+                    artifact_root=Path(artifact_directory),
+                    cache_root=Path(cache_directory),
+                    run_nonce="second",
+                ),
+            )
+            self.assertNotEqual(first.manifest.run_id, second.manifest.run_id)
+            self.assertTrue((first.artifact_directory / "manifest.json").is_file())
+            self.assertTrue((second.artifact_directory / "manifest.json").is_file())
 
     def test_fake_baseline_is_label_isolated_and_writes_immutable_bundle(self) -> None:
         opened: list[str] = []

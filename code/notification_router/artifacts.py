@@ -137,8 +137,17 @@ def build_label_free_run_manifest(
     configuration: Mapping[str, object],
     architecture_version: str = "0.1",
     milestone: str = "M4A",
+    run_nonce: str | None = None,
 ) -> RunManifest:
     """Build a runtime manifest without reading or recording expected labels."""
+
+    if run_nonce is not None:
+        if (
+            not run_nonce
+            or len(run_nonce) > 64
+            or any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for character in run_nonce)
+        ):
+            raise ValueError("run_nonce must be a non-empty safe identifier of at most 64 characters")
 
     config_hash = canonical_hash(configuration)
     identity = {
@@ -160,6 +169,8 @@ def build_label_free_run_manifest(
             "errors.jsonl",
         ],
     }
+    if run_nonce is not None:
+        identity["run_nonce"] = run_nonce
     return RunManifest(payload={**identity, "run_id": canonical_hash(identity)})
 
 

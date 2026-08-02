@@ -90,20 +90,36 @@ class BaselineRunnerConfig:
     total_cost_limit_usd: float = 1.0
     systematic_contract_failure_limit: int = 3
     retrieval_config: RetrievalConfig = field(default_factory=RetrievalConfig)
+    run_nonce: str | None = None
 
     def __post_init__(self) -> None:
         if self.total_cost_limit_usd < 0 or self.total_cost_limit_usd > 1.0:
             raise BaselineConfigurationError("baseline total cost must be in [0, 1.0]")
         if self.systematic_contract_failure_limit < 1:
             raise BaselineConfigurationError("systematic contract failure limit must be positive")
+        if self.run_nonce is not None:
+            if (
+                not self.run_nonce
+                or len(self.run_nonce) > 64
+                or any(
+                    character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+                    for character in self.run_nonce
+                )
+            ):
+                raise BaselineConfigurationError(
+                    "run_nonce must be a non-empty safe identifier of at most 64 characters"
+                )
 
     def as_dict(self) -> dict[str, object]:
-        return {
+        result = {
             "runner_version": BASELINE_RUNNER_VERSION,
             "total_cost_limit_usd": self.total_cost_limit_usd,
             "systematic_contract_failure_limit": self.systematic_contract_failure_limit,
             "retrieval": self.retrieval_config.as_dict(),
         }
+        if self.run_nonce is not None:
+            result["run_nonce"] = self.run_nonce
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -465,6 +481,7 @@ def run_development_baseline(
         split_manifest_sha256=harness.split_manifest_sha256,
         row_count=len(development_rows),
         configuration=configuration,
+        run_nonce=runner_config.run_nonce,
     )
     store = ImmutableArtifactStore(Path(runner_config.artifact_root) / manifest.run_id)
     store.write_json("manifest.json", manifest.as_dict())
@@ -999,6 +1016,11 @@ def build_parser():
     parser.add_argument("--artifact-dir", type=Path, default=Path("../.artifacts/milestone4a"))
     parser.add_argument("--cache-dir", type=Path, default=Path("../.artifacts/milestone4a/cache"))
     parser.add_argument("--max-cost-usd", type=float, default=1.0)
+    parser.add_argument(
+        "--run-id",
+        dest="run_nonce",
+        help="explicit safe namespace for a fresh immutable rerun",
+    )
     parser.add_argument("--log-file", type=Path)
     parser.add_argument("--json", action="store_true")
     return parser
@@ -1014,6 +1036,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             artifact_root=args.artifact_dir,
             cache_root=args.cache_dir,
             total_cost_limit_usd=args.max_cost_usd,
+            run_nonce=args.run_nonce,
         )
         result = run_development_baseline(
             dataset_dir=args.dataset_dir,

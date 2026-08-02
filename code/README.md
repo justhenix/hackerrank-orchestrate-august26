@@ -190,6 +190,13 @@ Run the complete Vertex AI development baseline from this `code/` directory:
 python -m notification_router.baseline --dataset-dir ../dataset --env-file ../.env --artifact-dir ../.artifacts/milestone4a --cache-dir ../.artifacts/milestone4a/cache --max-cost-usd 1.00 --json
 ```
 
+For an explicit fresh rerun, provide a new safe run namespace and a clean
+artifact directory; the previous run remains write-once and untouched:
+
+```powershell
+python -m notification_router.baseline --dataset-dir ../dataset --env-file ../.env --artifact-dir ../.artifacts/milestone4a-fresh --cache-dir ../.artifacts/milestone4a-fresh/cache --run-id 20260802T-baseline-01 --max-cost-usd 1.00 --json
+```
+
 The command requires `NOTIFICATION_ROUTER_API_ENABLED=1`,
 `NOTIFICATION_ROUTER_PROVIDER=gemini`, and
 `NOTIFICATION_ROUTER_GEMINI_BACKEND=vertex` in the loaded environment. It
