@@ -1,111 +1,111 @@
 message_id,action,message_type,reason,confidence,evidence_message_ids
-msg_023,,,,,
-msg_091,,,,,
-msg_090,,,,,
-msg_048,,,,,
-msg_040,,,,,
-msg_075,,,,,
-msg_005,,,,,
-msg_104,,,,,
-msg_069,,,,,
-msg_107,,,,,
-msg_070,,,,,
-msg_003,,,,,
-msg_099,,,,,
-msg_008,,,,,
-msg_092,,,,,
-msg_060,,,,,
-msg_004,,,,,
-msg_030,,,,,
-msg_045,,,,,
-msg_052,,,,,
-msg_009,,,,,
-msg_071,,,,,
-msg_016,,,,,
-msg_065,,,,,
-msg_038,,,,,
-msg_086,,,,,
-msg_014,,,,,
-msg_094,,,,,
-msg_029,,,,,
-msg_105,,,,,
-msg_002,,,,,
-msg_010,,,,,
-msg_078,,,,,
-msg_013,,,,,
-msg_018,,,,,
-msg_044,,,,,
-msg_032,,,,,
-msg_106,,,,,
-msg_006,,,,,
-msg_109,,,,,
-msg_108,,,,,
-msg_019,,,,,
-msg_088,,,,,
-msg_056,,,,,
-msg_027,,,,,
-msg_050,,,,,
-msg_083,,,,,
-msg_063,,,,,
-msg_033,,,,,
-msg_061,,,,,
-msg_020,,,,,
-msg_017,,,,,
-msg_058,,,,,
-msg_026,,,,,
-msg_047,,,,,
-msg_046,,,,,
-msg_042,,,,,
-msg_079,,,,,
-msg_098,,,,,
-msg_037,,,,,
-msg_007,,,,,
-msg_085,,,,,
-msg_001,,,,,
-msg_021,,,,,
-msg_028,,,,,
-msg_012,,,,,
-msg_064,,,,,
-msg_103,,,,,
-msg_031,,,,,
-msg_057,,,,,
-msg_087,,,,,
-msg_067,,,,,
-msg_039,,,,,
-msg_082,,,,,
-msg_066,,,,,
-msg_049,,,,,
-msg_015,,,,,
-msg_051,,,,,
-msg_097,,,,,
-msg_089,,,,,
-msg_053,,,,,
-msg_059,,,,,
-msg_024,,,,,
-msg_072,,,,,
-msg_036,,,,,
-msg_076,,,,,
-msg_055,,,,,
-msg_102,,,,,
-msg_080,,,,,
-msg_093,,,,,
-msg_034,,,,,
-msg_035,,,,,
-msg_101,,,,,
-msg_041,,,,,
-msg_011,,,,,
-msg_110,,,,,
-msg_095,,,,,
-msg_074,,,,,
-msg_073,,,,,
-msg_054,,,,,
-msg_068,,,,,
-msg_100,,,,,
-msg_062,,,,,
-msg_096,,,,,
-msg_043,,,,,
-msg_077,,,,,
-msg_081,,,,,
-msg_025,,,,,
-msg_084,,,,,
-msg_022,,,,,
+msg_023,notify,business_update,"Legitimate account update from trusted HDFC Bank, requiring immediate user attention and review in app.",0.7281,message_0243
+msg_091,mute,scam,Phishing attempt requesting a login code to gain access to the user's workspace.,0.8356,message_0381;message_0238;message_0321
+msg_090,digest,personal,"Personal inquiry about a package mix-up, explicitly stating no urgency.",0.7294,message_0339;message_0340;message_0338
+msg_048,mute,scam,"Sender (u_011) has prior reported messages of similar scam nature, containing urgent QR payment requests and threats.",0.7188,message_0152;message_0151;message_0271
+msg_040,mute,spam,"This chain message is likely spam, arriving in a group the user has muted.",0.8513,message_0136
+msg_075,notify,business_update,This is a time-critical business update about a Grab ride status change.,0.7588,message_0206;message_0205
+msg_005,notify,personal,"Time-sensitive update regarding item pickup, deadline today 6 PM.",0.8154,message_0390;message_0065;message_0049
+msg_104,notify,personal,"Time-critical follow-up regarding collection of a previously reserved denim jacket, with explicit deadline and potential loss of item.",0.714,message_0115;message_0050;message_0224
+msg_069,mute,spam,"Group is muted, and message is a generic chain forward, consistent with prior muted content.",0.8496,message_0194;message_0193;message_0080
+msg_107,notify,scam,"Routing override: user opens banking alerts. Message requests OTP for wallet payments, indicating scam.",0.8403,message_0213;message_0056;message_0369
+msg_070,mute,scam,This message is a scam attempting to phish OTP and block the user's account. Muting to protect the user.,0.8072,message_0369;message_0045;message_0023
+msg_003,notify,business_update,Order update from verified Amazon India about delivery expected today. User has prior interaction with business.,0.7168,message_0031;message_0267
+msg_099,digest,business_update,Non-urgent business update from trusted sender with notes for dashboard review.,0.8227,message_0249;message_0227;message_0118
+msg_008,digest,business_update,"Feedback request from trusted business sent during quiet hours; therefore, it will be digested.",0.6993,message_0072;message_0071;message_0296
+msg_092,notify,payment,"Monthly card statement from American Express, prompting review of payment details and date.",0.6758,message_0346;message_0344;message_0384
+msg_060,notify,urgent,Urgent academic reminder about an internship approval deadline closing today at 5 PM. Sender is trusted.,0.7208,message_0176;message_0404;message_0284
+msg_004,notify,business_update,Health-related update from Apollo 24|7 requiring user review in the app. This is a transactional message.,0.7068,message_0245;message_0064;message_0063
+msg_030,mute,promotion,"Promotional message from muted marketplace group, user prefers no notification.",0.6061,message_0115;message_0232;message_0050
+msg_045,notify,urgent,Urgent Amazon package delivery requires user confirmation/pickup within 10 minutes at the gate.,0.8088,message_0146;message_0031
+msg_052,mute,scam,"This is a scam message from an unverified domain impersonating Talabat, similar to previously reported messages.",0.7139,message_0208;message_0207;message_0160
+msg_009,mute,event,"Group is muted by user, and message content suggests muting the thread.",0.8138,message_0074;message_0073
+msg_071,notify,personal,"Personal message from a trusted family member regarding an uncertain plan, warrants direct notification.",0.6792,message_0197;message_0198
+msg_016,mute,scam,This message is a scam attempting to elicit credentials via a suspicious link with a time-critical warning.,0.6123,message_0087;message_0184;message_0088
+msg_065,mute,scam,"Sender Target is advertising Amazon Prime Day, indicating potential impersonation or scam.",0.5701,message_0261;message_0032;message_0108
+msg_038,mute,scam,"Message is a deceptive chain letter often associated with scam or spam, similar to prior muted messages.",0.5729,message_0131;message_0132
+msg_086,digest,unknown,Routing unavailable; queued safely for later review.,0.1,none
+msg_014,mute,promotion,User opted out of Swish promotions; this message is a promotional offer.,0.7397,message_0017;message_0084;message_0083
+msg_094,notify,promotion,Promotional welcome offer from Nykaa with a time-critical discount expiring tonight.,0.6363,message_0048;message_0220;message_0356
+msg_029,notify,promotion,"Promotional offer for a kurta set from a group member in a marketplace group, user engaged with similar past messages.",0.5844,message_0332;message_0095;message_0231
+msg_105,digest,scam,"This forwarded message contains potentially harmful health misinformation, advising against medication and urging to share.",0.709,message_0233;message_0373
+msg_002,notify,urgent,"Urgent request for a call about a refund edge case before a client meeting, directly addressing the user.",0.7107,message_0169;message_0003;message_0059
+msg_010,digest,business_update,Feedback request from trusted cinema; user has recent activity; suitable for digest delivery.,0.8282,message_0011;message_0242;message_0076
+msg_078,mute,scam,This message is a scam attempting to phish bank details via an urgent false claim.,0.7126,message_0212;message_0211;message_0164
+msg_013,digest,promotion,Promotional offer for a recliner discount posted in a university faculty advising group.,0.6726,message_0131;message_0132
+msg_018,mute,scam,Scam message similar to previously reported messages from this sender and other sources.,0.7152,message_0092;message_0091;message_0026
+msg_044,mute,scam,Scam message creating urgency and requesting OTP to steal credentials via a link.,0.702,message_0144;message_0143
+msg_032,notify,personal,"Direct request from trusted group member for shared class materials, not time-critical.",0.8138,message_0374;message_0285;message_0119
+msg_106,notify,event,"Urgent update about dance practice location and access, requiring user attention.",0.8532,message_0234;message_0376
+msg_006,notify,business_update,"Important update from admin about maintenance payments, deadlines, and correct official channels.",0.748,message_0271;message_0029;message_0030
+msg_109,notify,payment,"Trusted admin requests urgent access-card penalty payment via QR code, due by 6 PM today.",0.5345,message_0152;message_0151;message_0237
+msg_108,digest,unknown,Routing unavailable; queued safely for later review.,0.1,none
+msg_019,digest,unknown,Routing unavailable; queued safely for later review.,0.1,none
+msg_088,digest,unknown,Routing unavailable; queued safely for later review.,0.1,none
+msg_056,digest,urgent,"Important, time-critical personal message about a changed doctor's appointment requiring user confirmation by 5:15 PM, hence digested.",0.4254,message_0226;message_0168;message_0359
+msg_027,digest,promotion,Promotional message from a business with domain mismatch and conflicting image branding.,0.6012,message_0272;message_0109;message_0033
+msg_050,notify,business_update,"Health-related update from Green Cross Pharmacy regarding appointment, prescription, or pickup details.",0.7197,message_0156;message_0155;message_0279
+msg_083,notify,personal,"Direct request from coworker about an onboarding document, not urgent.",0.8124,message_0219
+msg_063,mute,scam,"This message is a suspected scam requesting an urgent payment via QR code, likely impersonating a service provider.",0.7301,message_0182;message_0181
+msg_033,notify,greeting,"Personal greeting and check-in from a family member, explicitly stating no urgency.",0.8196,message_0409;message_0280;message_0121
+msg_061,mute,forward,"Chain letter message and a forward request, consistent with muted group history.",0.8512,message_0194;message_0193;message_0247
+msg_020,notify,scam,"Urgent request with a suspicious link for an account check, likely a scam attempting to phish credentials.",0.7358,message_0390;message_0332;message_0095
+msg_017,mute,scam,"Potentially a scam attempting to solicit payment, similar to previously reported messages in this muted group.",0.7116,message_0090;message_0089
+msg_058,mute,spam,"User muted the group. This message is a forwarded health chain message encouraging further distribution, consistent with prior spam.",0.6576,message_0078;message_0077;message_0172
+msg_026,mute,scam,Scam message with suspicious domain and requests for verification to avoid parcel return. User reported similar messages before.,0.621,message_0032;message_0108;message_0107
+msg_047,notify,business_update,"Informational update regarding lift maintenance in the society, requiring awareness for access.",0.7164,message_0130;message_0129;message_0029
+msg_046,mute,scam,"Message requests an OTP and warns of account closure, indicating a scam attempt.",0.7075,message_0148;message_0147;message_0087
+msg_042,notify,urgent,Urgent security alert for gate closure and car towing; move vehicles within 10 minutes.,0.8046,message_0140;message_0058
+msg_079,mute,scam,This message is a scam attempting to solicit an OTP by threatening account closure and imposing a false sense of urgency.,0.7325,message_0213;message_0056;message_0369
+msg_098,notify,urgent,Urgent personal message from a trusted sender requesting an immediate decision on a clinic appointment.,0.8164,message_0226;message_0168;message_0359
+msg_037,notify,urgent,"Urgent water tank arrival announcement, driver leaves in 10 minutes, next round only in evening.",0.8516,message_0130;message_0150;message_0269
+msg_007,digest,event,"Potluck update for the society, non-urgent information for group members.",0.8048,message_0070;message_0069
+msg_085,mute,scam,Potential bank account scam requesting OTP for verification. Muting this message for your safety.,0.546,message_0221;message_0213;message_0369
+msg_001,notify,urgent,Urgent notification regarding water supply for Tower B residents due to tanker leaving and open valve.,0.8556,message_0057;message_0240;message_0139
+msg_021,notify,payment,"Time-critical payment reminder from admin, includes a warning about fraudulent payment links.",0.687,message_0271;message_0029;message_0030
+msg_028,mute,promotion,User has opted out of promotional messages from this sender.,0.6284,message_0034;message_0112;message_0111
+msg_012,mute,spam,Spam health advice chain message encouraging broad sharing. User has consistently muted similar content from this sender.,0.85,message_0194;message_0193;message_0247
+msg_064,mute,scam,"This message is a scam attempting to solicit sensitive financial information by creating urgency around a refund, similar to previously reported scam attempts.",0.6913,message_0087;message_0184;message_0088
+msg_103,notify,personal,Personal message about picking up a reserved item with a deadline and implied urgency.,0.7072,message_0382;message_0065;message_0049
+msg_031,notify,urgent,Urgent business update requires action on deployment and incident summary items by tonight to avoid morning issues.,0.8346,message_0055;message_0228;message_0362
+msg_057,notify,business_update,"Urgent, directly addressed, and critical business update about a failing build requiring user's immediate attention before client communication.",0.6626,message_0371;message_0169;message_0003
+msg_087,mute,promotion,"Promotional message in a muted group, similar to previously reported spam.",0.8253,message_0389;message_0164;message_0204
+msg_067,mute,scam,Suspicious maintenance payment request with an urgent deadline. Contradicts official payment channels and raises scam concerns given group's history.,0.523,message_0271;message_0029;message_0030
+msg_039,notify,payment,"Direct request for fee receipt to confirm field trip payment, requiring immediate action.",0.7207,message_0037;message_0051;message_0364
+msg_082,notify,urgent,Urgent payment system failure requires immediate attention from coworkers in a group chat.,0.6315,message_0380;message_0218;message_0397
+msg_066,mute,promotion,"User opted out of promotions from this business, and similar messages have been muted previously.",0.7261,message_0188;message_0187;message_0402
+msg_049,notify,business_update,Time-critical business update from Shopee regarding a return pickup scheduled for today.,0.7327,message_0153;message_0291;message_0154
+msg_015,mute,scam,Message is a scam attempting to acquire OTP credentials under false pretense of urgency to lock profile.,0.8122,message_0213;message_0085;message_0045
+msg_051,mute,promotion,User has opted out of promotions but received a promotional offer from Flipkart.,0.721,message_0104;message_0103;message_0257
+msg_097,digest,personal,"Personal update; sender states it's not urgent and prefers communication tomorrow, requesting no calls now.",0.8147,message_0054;message_0167;message_0225
+msg_089,notify,personal,Personal message about a lost item with a pickup deadline.,0.4645,message_0301;message_0300;message_0299
+msg_053,notify,business_update,"Market update for semiconductor stocks in investment group, relevant to user's interests and engagement.",0.7617,message_0411;message_0253;message_0161
+msg_059,mute,scam,This is a scam attempting to solicit account numbers under false pretenses with a fabricated deadline.,0.7069,message_0213;message_0056;message_0369
+msg_024,mute,promotion,"User does not allow promotions from this business, and the message is promotional.",0.8031,message_0104;message_0103;message_0257
+msg_072,mute,scam,Message is a scam attempting to solicit credentials with a suspicious link and creating urgency. Similar messages were reported previously.,0.7321,message_0213;message_0085;message_0045
+msg_036,mute,scam,"This message is a potential scam due to a domain mismatch, requesting verification via a suspicious link, and resembles previously reported messages.",0.5876,message_0128;message_0127;message_0283
+msg_076,mute,scam,Suspicious refund request from unverified sender with domain mismatch. User reported similar messages before.,0.6065,message_0208;message_0207;message_0160
+msg_055,notify,urgent,"Urgent request to call immediately, requiring quick decision. User is a trusted personal sender.",0.8479,message_0387;message_0166
+msg_102,notify,urgent,Urgent production rollback update requiring user to stay online for the next 30 minutes.,0.8326,message_0371;message_0230
+msg_080,notify,urgent,Urgent notice for gate repair requires immediate action to move cars.,0.8257,message_0130;message_0150;message_0190
+msg_093,digest,business_update,FedEx delivery update with past deadline. Digested due to quiet hours and delivery window already closed.,0.6806,message_0348;message_0347;message_0349
+msg_034,digest,greeting,"Sender is trusted, but the message is a greeting in a muted group with no urgent requests.",0.822,message_0077;message_0013;message_0167
+msg_035,notify,promotion,Promotional message about a new feature from a verified business the user has previously engaged with.,0.7397,message_0126;message_0125;message_0281
+msg_101,digest,personal,Personal message from trusted sender during quiet hours; no reply needed.,0.8429,message_0370;message_0229;message_0268
+msg_041,digest,unknown,Routing unavailable; queued safely for later review.,0.1,none
+msg_011,mute,promotion,Group is muted; message is a forwarded promotional greeting similar to previously muted content.,0.8235,message_0078;message_0077;message_0172
+msg_110,mute,scam,"This message is a scam requesting a login code, from a sender with prior reports. Muting to protect the user.",0.726,message_0381;message_0238;message_0321
+msg_095,digest,unknown,Routing unavailable; queued safely for later review.,0.1,none
+msg_074,mute,scam,This promotional message from a muted group with prior reports appears to be a scam.,0.5098,message_0389;message_0204;message_0203
+msg_073,mute,scam,This is a scam message impersonating a security alert to steal credentials via a suspicious link.,0.6789,message_0087;message_0184;message_0024
+msg_054,mute,scam,"This is a likely advance-fee loan scam with an urgent payment request via a link, mirroring previously reported messages.",0.7426,message_0389;message_0164;message_0204
+msg_068,digest,event,"No urgency, group event planning for a match, a poll will be set up later for participation.",0.8105,message_0192;message_0191
+msg_100,notify,urgent,"Urgent request to resolve payment worker retries, client escalation in 20 minutes; prior similar issues exist.",0.8256,message_0249;message_0228;message_0362
+msg_062,digest,event,"Fire alarm test notification, routed to digest due to quiet hours. Important event for residents.",0.7182,message_0130;message_0269;message_0129
+msg_096,notify,urgent,Urgent notification regarding a found passport that must be collected before 6 PM today.,0.6633,message_0353;message_0405;message_0354
+msg_043,notify,urgent,Urgent community update from group admin about critical water supply. Requires immediate attention.,0.8305,message_0271;message_0410;message_0130
+msg_077,digest,event,Important school field trip update during quiet hours; consent needed before bus list closes this evening.,0.8478,message_0037;message_0051;message_0364
+msg_081,notify,urgent,Urgent school pickup location change for today requires timely action by 3:40.,0.7045,message_0217
+msg_025,notify,business_update,"Order status update from a trusted business, confirming packing and expected local hub arrival today.",0.7318,message_0105;message_0239;message_0004
+msg_084,mute,promotion,"Promotional offer from trusted business for a credit card. User opted out of promotions, so muting is appropriate.",0.7412,message_0220;message_0048;message_0356
+msg_022,mute,scam,"This message is a suspicious payment request using an unverified link, common in prior reported scams within this group.",0.6566,message_0152;message_0151;message_0271
