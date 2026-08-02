@@ -447,7 +447,7 @@ def _write_jsonl(store: ImmutableArtifactStore, relative_name: str, rows: Sequen
     store.write_bytes(relative_name, content)
 
 
-def run_development_baseline(
+def run_partition_baseline(
     *,
     dataset_dir: str | Path,
     config: IntegrationConfig,
@@ -455,31 +455,44 @@ def run_development_baseline(
     bundle: ProviderBundle | None = None,
     environment: Mapping[str, str] | None = None,
     log_file: str | Path | None = None,
+    partition: str = "development",
+    reveal_holdout: bool = False,
 ) -> BaselineRun:
-    """Run exactly the 20-row development partition through S0-S9."""
+    """Run one explicitly selected label-free sample partition through S0-S9."""
 
     dataset_root = Path(dataset_dir).resolve()
     sample_path = dataset_root / "sample_messages.csv"
     if sample_path.name != "sample_messages.csv" or not sample_path.is_file():
-        raise BaselineConfigurationError("baseline requires dataset/sample_messages.csv")
+        raise BaselineConfigurationError("sample baseline requires dataset/sample_messages.csv")
+    if partition not in {"development", "holdout"}:
+        raise BaselineConfigurationError("partition must be development or holdout")
+    if partition == "holdout" and not reveal_holdout:
+        raise BaselineConfigurationError("holdout execution requires explicit reveal")
     if config.cost_limit_usd > runner_config.total_cost_limit_usd:
         config = replace(config, cost_limit_usd=runner_config.total_cost_limit_usd)
     if bundle is None:
         bundle = build_provider_bundle(config, environ=environment)
 
     harness = EvaluationHarness(sample_path)
-    development_rows = harness.router_inputs("development")
-    if len(development_rows) != 20:
-        raise BaselineConfigurationError("development baseline requires exactly 20 sanitized rows")
+    partition_rows = (
+        harness.router_inputs("development")
+        if partition == "development"
+        else harness.reveal_holdout_inputs()
+    )
+    expected_row_count = 20 if partition == "development" else 10
+    if len(partition_rows) != expected_row_count:
+        raise BaselineConfigurationError(
+            f"{partition} baseline requires exactly {expected_row_count} sanitized rows"
+        )
     tables = load_context_dataset(dataset_root)
     normalized = normalize_dataset(tables)
     configuration = _manifest_configuration(config, runner_config)
     manifest = build_label_free_run_manifest(
-        partition="development",
+        partition=partition,
         source_file_sha256=sha256_file(sample_path),
-        sanitized_input_sha256=canonical_hash([row.as_dict() for row in development_rows]),
+        sanitized_input_sha256=canonical_hash([row.as_dict() for row in partition_rows]),
         split_manifest_sha256=harness.split_manifest_sha256,
-        row_count=len(development_rows),
+        row_count=len(partition_rows),
         configuration=configuration,
         run_nonce=runner_config.run_nonce,
     )
@@ -551,7 +564,7 @@ def run_development_baseline(
             contract_failures[normalized] += 1
         return error
 
-    for message in development_rows:
+    for message in partition_rows:
         active_row_hash = safe_identifier(message.message_id)
         active_raw_paths.clear()
         row_errors: list[BaselineError] = []
@@ -890,7 +903,7 @@ def run_development_baseline(
         abort_payload = {
             "status": "aborted",
             "completed_rows": len(predictions),
-            "expected_rows": len(development_rows),
+            "expected_rows": len(partition_rows),
             "reason": "systematic contract or required-stage failure",
             "error_counts": dict(sorted(contract_failures.items())),
         }
@@ -912,7 +925,7 @@ def run_development_baseline(
 
     # The evaluator reads development labels only after the label-free router
     # pipeline has completed.  No expected value is passed into any stage above.
-    expected = harness._expected("development")
+    expected = harness._expected(partition, reveal_holdout=reveal_holdout)
     metrics = compute_metrics(expected, predictions, allowlists)
     stage_records = [
         {
@@ -941,8 +954,8 @@ def run_development_baseline(
         "raw_model_rows": sum(bool(record.get("routing", {}).get("raw_schema_valid")) for record in row_records),
         "raw_model_schema_valid_rate": (
             sum(bool(record.get("routing", {}).get("raw_schema_valid")) for record in row_records)
-            / len(development_rows)
-            if development_rows
+            / len(partition_rows)
+            if partition_rows
             else 0.0
         ),
         "contract_final_rows": len(predictions),
@@ -996,6 +1009,52 @@ def run_development_baseline(
     )
 
 
+def run_development_baseline(
+    *,
+    dataset_dir: str | Path,
+    config: IntegrationConfig,
+    runner_config: BaselineRunnerConfig,
+    bundle: ProviderBundle | None = None,
+    environment: Mapping[str, str] | None = None,
+    log_file: str | Path | None = None,
+) -> BaselineRun:
+    """Run exactly the 20-row development partition through S0-S9."""
+
+    return run_partition_baseline(
+        dataset_dir=dataset_dir,
+        config=config,
+        runner_config=runner_config,
+        bundle=bundle,
+        environment=environment,
+        log_file=log_file,
+        partition="development",
+        reveal_holdout=False,
+    )
+
+
+def run_holdout_baseline(
+    *,
+    dataset_dir: str | Path,
+    config: IntegrationConfig,
+    runner_config: BaselineRunnerConfig,
+    bundle: ProviderBundle | None = None,
+    environment: Mapping[str, str] | None = None,
+    log_file: str | Path | None = None,
+) -> BaselineRun:
+    """Run the sealed 10-row holdout only after an explicit evaluator reveal."""
+
+    return run_partition_baseline(
+        dataset_dir=dataset_dir,
+        config=config,
+        runner_config=runner_config,
+        bundle=bundle,
+        environment=environment,
+        log_file=log_file,
+        partition="holdout",
+        reveal_holdout=True,
+    )
+
+
 def _load_vertex_configuration(env_file: Path, max_cost_usd: float) -> tuple[IntegrationConfig, Mapping[str, str]]:
     environment = dict(os.environ)
     environment.update(_read_env_file(env_file))
@@ -1016,6 +1075,12 @@ def build_parser():
     parser.add_argument("--artifact-dir", type=Path, default=Path("../.artifacts/milestone4a"))
     parser.add_argument("--cache-dir", type=Path, default=Path("../.artifacts/milestone4a/cache"))
     parser.add_argument("--max-cost-usd", type=float, default=1.0)
+    parser.add_argument("--partition", choices=("development", "holdout"), default="development")
+    parser.add_argument(
+        "--reveal-holdout",
+        action="store_true",
+        help="required explicit evaluator reveal for the one-time holdout run",
+    )
     parser.add_argument(
         "--run-id",
         dest="run_nonce",
@@ -1038,7 +1103,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             total_cost_limit_usd=args.max_cost_usd,
             run_nonce=args.run_nonce,
         )
-        result = run_development_baseline(
+        if args.partition == "holdout" and not args.reveal_holdout:
+            raise BaselineConfigurationError(
+                "holdout execution requires --reveal-holdout"
+            )
+        runner = (
+            run_holdout_baseline
+            if args.partition == "holdout"
+            else run_development_baseline
+        )
+        result = runner(
             dataset_dir=args.dataset_dir,
             config=config,
             runner_config=runner_config,

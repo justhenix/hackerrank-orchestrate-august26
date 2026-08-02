@@ -13,6 +13,7 @@ from notification_router.artifacts import build_label_free_run_manifest
 from notification_router.baseline import (
     BaselineRunnerConfig,
     run_development_baseline,
+    run_holdout_baseline,
 )
 from notification_router.confidence import calculate_final_confidence
 from notification_router.config import IntegrationConfig
@@ -296,6 +297,30 @@ class MilestoneFourATests(unittest.TestCase):
             self.assertEqual(len(row_records), 20)
             manifest_text = (result.artifact_directory / "manifest.json").read_text(encoding="utf-8")
             self.assertNotIn("sealed_holdout", manifest_text)
+
+    def test_fake_holdout_run_requires_explicit_boundary_and_is_label_isolated(self) -> None:
+        config = IntegrationConfig()
+        with tempfile.TemporaryDirectory() as artifact_directory, tempfile.TemporaryDirectory() as cache_directory:
+            result = run_holdout_baseline(
+                dataset_dir=DATASET,
+                config=config,
+                bundle=ProviderBundle(
+                    extraction=FakeMultimodalProvider(),
+                    routing=FakeTextRoutingProvider(),
+                ),
+                runner_config=BaselineRunnerConfig(
+                    artifact_root=Path(artifact_directory),
+                    cache_root=Path(cache_directory),
+                    run_nonce="holdout-test",
+                ),
+            )
+            self.assertFalse(result.aborted)
+            self.assertEqual(result.completed_rows, 10)
+            self.assertEqual(result.failed_rows, 0)
+            self.assertEqual(result.degraded_rows, 0)
+            manifest = (result.artifact_directory / "manifest.json").read_text(encoding="utf-8")
+            self.assertIn('"partition":"holdout"', manifest)
+            self.assertNotIn("expected", manifest)
 
 
 if __name__ == "__main__":
