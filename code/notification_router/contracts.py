@@ -662,7 +662,15 @@ def validate_routing_decision_against_packet(
         source = source_values[support.source_field]
         if support.end_char_exclusive > len(source):
             raise StructuredOutputError(
-                "semantic support span exceeds packet field", code="SCHEMA_INVALID"
+                "semantic support span exceeds packet field",
+                code="SCHEMA_INVALID",
+                field=f"semantic_support[{decision.semantic_support.index(support)}]",
+                constraint="source_field_bounds",
             )
         if not source[support.start_char : support.end_char_exclusive]:
-            raise StructuredOutputError("semantic support span is empty", code="SCHEMA_INVALID")
+            raise StructuredOutputError(
+                "semantic support span is empty",
+                code="SCHEMA_INVALID",
+                field=f"semantic_support[{decision.semantic_support.index(support)}]",
+                constraint="nonempty_source_span",
+            )

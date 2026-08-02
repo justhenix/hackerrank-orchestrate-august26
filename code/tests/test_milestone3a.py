@@ -16,6 +16,7 @@ from notification_router.contracts import (
     parse_extraction_record,
     parse_routing_decision,
     routing_response_schema,
+    validate_routing_decision_against_packet,
 )
 from notification_router.dataset import (
     load_context_dataset,
@@ -272,6 +273,37 @@ class MilestoneThreeATests(unittest.TestCase):
             allowed_evidence_message_ids=packet.as_dict()["allowed_evidence_message_ids"],
         )
         self.assertEqual(valid.semantic_support[0].flag, "time_critical")
+
+    def test_semantic_support_bounds_are_strict_and_machine_readable(self) -> None:
+        _, packet = self._text_packet()
+        provider = FakeTextRoutingProvider()
+        request = type("Request", (), {"packet": packet, "packet_bytes": packet.prompt_bytes()})()
+        payload = json.loads(provider.route(request, model="fake", timeout_seconds=1).raw_json)
+        payload["semantic_flags"]["time_critical"] = True
+        payload["semantic_support"] = [
+            {
+                "flag": "time_critical",
+                "source_field": "message_text",
+                "start_char": 0,
+                "end_char_exclusive": 10_000,
+            }
+        ]
+        decision = parse_routing_decision(
+            json.dumps(payload).encode(),
+            allowed_evidence_message_ids=packet.as_dict()["allowed_evidence_message_ids"],
+        )
+        with self.assertRaisesRegex(
+            StructuredOutputError, "semantic support span exceeds packet field"
+        ) as context:
+            validate_routing_decision_against_packet(decision, packet.as_dict())
+        self.assertEqual(
+            context.exception.as_machine_readable(),
+            {
+                "code": "SCHEMA_INVALID",
+                "field": "semantic_support[0]",
+                "constraint": "source_field_bounds",
+            },
+        )
 
     def test_bounded_schema_retry_uses_machine_feedback_and_preserves_attempts(self) -> None:
         _, packet = self._text_packet()
