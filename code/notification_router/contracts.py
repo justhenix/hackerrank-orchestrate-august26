@@ -386,6 +386,13 @@ def parse_extraction_record(raw: bytes | str) -> ExtractionRecord:
         created_at = datetime.fromisoformat(created_at_value)
     except ValueError as exc:
         raise StructuredOutputError("created_at is not ISO-8601", code="SCHEMA_INVALID") from exc
+    if created_at.tzinfo is not None and created_at.utcoffset() is not None:
+        raise StructuredOutputError(
+            "created_at must use dataset-local naive time",
+            code="SCHEMA_INVALID",
+            field="created_at",
+            constraint="naive_dataset_timestamp",
+        )
     return ExtractionRecord(
         media_id=media_id,
         content_sha256=content_hash,
@@ -532,6 +539,13 @@ def parse_routing_decision(
             deadline_at = datetime.fromisoformat(deadline_text)
         except ValueError as exc:
             raise StructuredOutputError("deadline_at is not ISO-8601", code="SCHEMA_INVALID") from exc
+        if deadline_at.tzinfo is not None and deadline_at.utcoffset() is not None:
+            raise StructuredOutputError(
+                "deadline_at must use dataset-local naive time",
+                code="SCHEMA_INVALID",
+                field="deadline_at",
+                constraint="naive_dataset_timestamp",
+            )
     support_value = value["semantic_support"]
     if not isinstance(support_value, list):
         raise StructuredOutputError("semantic_support must be an array", code="SCHEMA_INVALID")

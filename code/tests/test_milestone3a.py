@@ -4,6 +4,7 @@ import io
 import json
 import hashlib
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -171,6 +172,46 @@ class MilestoneThreeATests(unittest.TestCase):
         ):
             parse_routing_decision(
                 json.dumps(payload).encode(),
+                allowed_evidence_message_ids=packet.as_dict()["allowed_evidence_message_ids"],
+            )
+
+    def test_dataset_local_timestamps_reject_timezone_offsets(self) -> None:
+        request = ExtractionRequest(
+            media_id="media-time",
+            declared_media_type="image",
+            declared_path="media/image/time.jpeg",
+            detected_format="jpeg",
+            content_sha256=hashlib.sha256(b"media-time").hexdigest(),
+            media_bytes=b"media-time",
+            created_at=datetime(2026, 1, 1, 12, 0),
+        )
+        extraction = FakeMultimodalProvider().extract(
+            request, model="fake", timeout_seconds=1
+        )
+        extraction_payload = json.loads(extraction.raw_json)
+        extraction_payload["created_at"] = "2026-01-01T12:00:00+07:00"
+        with self.assertRaisesRegex(
+            StructuredOutputError, "created_at must use dataset-local naive time"
+        ):
+            parse_extraction_record(json.dumps(extraction_payload).encode())
+
+        _, packet = self._text_packet()
+        routing = json.loads(
+            FakeTextRoutingProvider()
+            .route(
+                type("Request", (), {"packet": packet, "packet_bytes": packet.prompt_bytes()})(),
+                model="fake",
+                timeout_seconds=1,
+            )
+            .raw_json
+        )
+        routing["semantic_flags"]["time_critical"] = True
+        routing["deadline_at"] = "2026-01-01T12:30:00+07:00"
+        with self.assertRaisesRegex(
+            StructuredOutputError, "deadline_at must use dataset-local naive time"
+        ):
+            parse_routing_decision(
+                json.dumps(routing).encode(),
                 allowed_evidence_message_ids=packet.as_dict()["allowed_evidence_message_ids"],
             )
 

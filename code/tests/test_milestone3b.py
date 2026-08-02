@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from notification_router.config import IntegrationConfig
+from notification_router.gemini import _provider_call_error
 from notification_router.contracts import (
     extraction_response_schema,
     routing_response_schema,
@@ -427,6 +428,23 @@ class MilestoneThreeBTests(unittest.TestCase):
         self.assertEqual(context.exception.code, "PROVIDER_RATE_LIMITED")
         self.assertEqual(context.exception.accounting.attempt_count, 2)
         self.assertNotIn("secret response", str(context.exception))
+
+    def test_sdk_failure_diagnostics_keep_status_and_redact_sensitive_text(self) -> None:
+        class FakeNotFoundError(RuntimeError):
+            code = 404
+            status = "NOT_FOUND"
+            message = (
+                "Publisher model projects/private-project/locations/private-region/"
+                "publishers/google/models/model-x was not found; api_key=secret-value"
+            )
+
+        error = _provider_call_error(FakeNotFoundError(), operation="routing")
+        self.assertEqual(error.code, "PROVIDER_REQUEST_FAILED")
+        self.assertIn("http_status=404", error.detail)
+        self.assertIn("reason=NOT_FOUND", error.detail)
+        self.assertIn("projects/[REDACTED]", error.detail)
+        self.assertNotIn("private-project", error.detail)
+        self.assertNotIn("secret-value", error.detail)
 
 
 if __name__ == "__main__":

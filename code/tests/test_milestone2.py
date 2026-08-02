@@ -203,9 +203,13 @@ class MilestoneTwoTests(unittest.TestCase):
         self.assertNotIn(incoming.message_text, json.dumps(envelope["instructions"], sort_keys=True))
         self.assertIn("candidate_rank", envelope["instructions"]["evidence_contract"])
         self.assertIn("Do not sort or reorder", envelope["instructions"]["evidence_contract"])
+        self.assertIn("reason field", envelope["instructions"]["response_contract"])
+        self.assertNotIn("explanation field", envelope["instructions"]["response_contract"])
+        self.assertIn("dataset-local naive", envelope["instructions"]["response_contract"])
         self.assertIn("at most one", envelope["instructions"]["semantic_support_contract"])
         self.assertIn("false flags must have no support entry", envelope["instructions"]["semantic_support_contract"])
         self.assertIn("never duplicate", envelope["instructions"]["semantic_support_contract"])
+        self.assertIn("within the supplied source field", envelope["instructions"]["semantic_support_contract"])
         candidates = envelope["routing_packet"]["historical_candidates"]
         self.assertEqual(
             [candidate["candidate_rank"] for candidate in candidates],

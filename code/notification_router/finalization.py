@@ -148,6 +148,16 @@ def validate_routing_safety(
 ) -> SafetyAudit:
     """Validate action/evidence safety without mutating the model decision."""
 
+    if decision.deadline_at is not None and (
+        decision.deadline_at.tzinfo is not None
+        and decision.deadline_at.utcoffset() is not None
+    ):
+        raise StructuredOutputError(
+            "deadline_at must use dataset-local naive time",
+            code="SCHEMA_INVALID",
+            field="deadline_at",
+            constraint="naive_dataset_timestamp",
+        )
     _validate_reason(decision, packet)
     try:
         validate_selected_evidence(
