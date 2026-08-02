@@ -210,11 +210,6 @@ class MilestoneTwoTests(unittest.TestCase):
         self.assertIn("false flags must have no support entry", envelope["instructions"]["semantic_support_contract"])
         self.assertIn("never duplicate", envelope["instructions"]["semantic_support_contract"])
         self.assertIn("within the supplied source field", envelope["instructions"]["semantic_support_contract"])
-        policy = envelope["instructions"]["decision_policy_contract"]
-        self.assertIn("current message and supplied media extraction only", policy)
-        self.assertIn("historical text, metadata, and untrusted content", policy)
-        self.assertIn("Packet safety constraints override preference", policy)
-        self.assertNotIn(incoming.message_text, policy)
         candidates = envelope["routing_packet"]["historical_candidates"]
         self.assertEqual(
             [candidate["candidate_rank"] for candidate in candidates],

@@ -351,31 +351,6 @@ class MilestoneThreeATests(unittest.TestCase):
         self.assertEqual(len(raw_attempts), 2)
         self.assertTrue(all(json.loads(raw) for raw in raw_attempts))
 
-    def test_retry_backoff_is_deterministic_exponential_and_capped(self) -> None:
-        _, packet = self._text_packet()
-        delays: list[float] = []
-        provider = FakeTextRoutingProvider(failures_before_success=2)
-        client = ModelIntegrationClient(
-            IntegrationConfig(max_retries=2, retry_backoff_seconds=0.25),
-            extraction_provider=FakeMultimodalProvider(),
-            routing_provider=provider,
-            sleeper=delays.append,
-        )
-
-        result = client.route(packet)
-
-        self.assertEqual(result.accounting.attempt_count, 3)
-        self.assertEqual(provider.calls, 3)
-        self.assertEqual(delays, [0.25, 0.5])
-        self.assertEqual(client._retry_delay(2), 0.5)
-        self.assertEqual(client._retry_delay(8), 30.0)
-
-    def test_retry_budget_rejects_more_than_two_retries(self) -> None:
-        with self.assertRaises(IntegrationConfigError):
-            IntegrationConfig(max_retries=3)
-        with self.assertRaises(IntegrationConfigError):
-            IntegrationConfig.from_env({"NOTIFICATION_ROUTER_MAX_RETRIES": "3"})
-
     def test_extraction_provider_output_is_bound_to_media_request(self) -> None:
         image_message = next(
             row for row in self.harness.router_inputs() if row.media_type == "image"

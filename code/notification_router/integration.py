@@ -142,16 +142,6 @@ class ModelIntegrationClient:
         output_cost = (usage.output_tokens or 0) * self.config.output_cost_per_1k_tokens / 1000
         return input_cost + output_cost
 
-    def _retry_delay(self, attempt: int) -> float:
-        """Return a deterministic, capped exponential delay before the next attempt."""
-
-        if attempt < 1:
-            raise ValueError("attempt must be positive")
-        return min(
-            self.config.retry_backoff_seconds * (2 ** (attempt - 1)),
-            30.0,
-        )
-
     @staticmethod
     def _provider_name(provider: object) -> str:
         name = getattr(provider, "name", None)
@@ -378,7 +368,7 @@ class ModelIntegrationClient:
                 )
                 break
             if attempt < self.config.maximum_attempts and self.config.retry_backoff_seconds:
-                self._sleeper(self._retry_delay(attempt))
+                self._sleeper(self.config.retry_backoff_seconds)
         accounting = CallAccounting(
             call_id=call_id,
             stage=stage,

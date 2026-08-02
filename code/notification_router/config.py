@@ -71,7 +71,7 @@ class IntegrationConfig:
     gemini_vertex_auth: str = "adc"
     gemini_vertex_credentials_file: str | None = None
     timeout_seconds: float = 30.0
-    max_retries: int = 2
+    max_retries: int = 1
     retry_backoff_seconds: float = 0.0
     concurrency: int = 1
     cost_limit_usd: float = 0.60
@@ -109,8 +109,8 @@ class IntegrationConfig:
                 raise IntegrationConfigError(f"{name} must be nonempty or null")
         if self.timeout_seconds <= 0 or self.timeout_seconds > 300:
             raise IntegrationConfigError("timeout_seconds must be in (0, 300]")
-        if not 0 <= self.max_retries <= 2:
-            raise IntegrationConfigError("max_retries must be between 0 and 2")
+        if not 0 <= self.max_retries <= 5:
+            raise IntegrationConfigError("max_retries must be between 0 and 5")
         if not 0 <= self.retry_backoff_seconds <= 30:
             raise IntegrationConfigError("retry_backoff_seconds must be between 0 and 30")
         if not 1 <= self.concurrency <= 16:
@@ -179,10 +179,10 @@ class IntegrationConfig:
                 maximum=300,
             ),
             max_retries=_parse_int(
-                env.get("NOTIFICATION_ROUTER_MAX_RETRIES", "2"),
+                env.get("NOTIFICATION_ROUTER_MAX_RETRIES", "1"),
                 name="NOTIFICATION_ROUTER_MAX_RETRIES",
                 minimum=0,
-                maximum=2,
+                maximum=5,
             ),
             retry_backoff_seconds=_parse_float(
                 env.get("NOTIFICATION_ROUTER_RETRY_BACKOFF_SECONDS", "0"),
