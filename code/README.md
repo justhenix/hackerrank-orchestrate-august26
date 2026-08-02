@@ -1,9 +1,10 @@
-# Architecture v0.1: Milestones 1-2 frozen, Milestones 3A-3B plumbing
+# Architecture v0.1: Milestone 4A development baseline
 
 This directory is the complete submission package for the deterministic
 Architecture v0.1 implementation. Milestones 1 and 2 are frozen. Milestones
-3A and 3B add provider-neutral and Google Gemini model integration plumbing
-without changing the frozen stage boundaries or final-decision responsibilities.
+3A and 3B add provider-neutral and Google Gemini model integration plumbing.
+Milestone 4A connects those stages for one immutable 20-row development
+baseline without opening the sealed holdout or target messages.
 
 Implemented scope:
 
@@ -46,10 +47,19 @@ Milestone 3B additionally includes:
 - schema-constrained text routing and image/audio extraction for both backends;
 - fully mocked backend tests that make zero network calls.
 
-No API call occurs unless explicitly enabled. Milestones 3A-3B do not implement
-prompt tuning, final confidence calculation or calibration, UI, target output
-generation, embeddings, caching, OCR/ASR implementations, or routing rules.
-The diagnostic and smoke commands never write `output.csv`.
+Milestone 4A additionally includes:
+
+- a label-isolated development runner over exactly 20 sanitized rows;
+- deterministic S4 features, initial safety constraints, strict S8 validation,
+  and the Architecture v0.1 final-confidence policy;
+- immutable per-row packet hashes, raw attempts, extraction records, final
+  decisions, error records, and evaluator metrics;
+- content-addressed successful extraction caching keyed by media content,
+  detected format, model, extractor/schema, and configuration identity.
+
+No API call occurs unless explicitly enabled. The baseline CLI requires an
+explicit Vertex AI configuration and never writes `output.csv`. It does not
+read `dataset/messages.csv` for prediction or reveal the sealed holdout.
 
 ## Timestamp policy
 
@@ -71,8 +81,8 @@ python -m pip install -e .
 Milestones 1-3A use only the Python standard library. Milestone 3B adds the
 official `google-genai` SDK for explicitly enabled live adapters. The SDK is
 imported lazily, so fake-provider tests still run without credentials or
-network access. The editable installation exposes the diagnostic
-`notification-router` and bounded `notification-router-smoke` commands.
+network access. The editable installation exposes the diagnostic,
+bounded-smoke, and development-baseline commands.
 
 ## Milestone 3A-3B configuration
 
@@ -172,6 +182,23 @@ configuration explicitly. Pass `--artifact-dir ../.artifacts/milestone3c` to
 preserve write-once raw response bytes and bounded smoke metadata; `.env` and
 `.artifacts/` are local-only and ignored.
 
+## Milestone 4A development baseline
+
+Run the complete Vertex AI development baseline from this `code/` directory:
+
+```powershell
+python -m notification_router.baseline --dataset-dir ../dataset --env-file ../.env --artifact-dir ../.artifacts/milestone4a --cache-dir ../.artifacts/milestone4a/cache --max-cost-usd 1.00 --json
+```
+
+The command requires `NOTIFICATION_ROUTER_API_ENABLED=1`,
+`NOTIFICATION_ROUTER_PROVIDER=gemini`, and
+`NOTIFICATION_ROUTER_GEMINI_BACKEND=vertex` in the loaded environment. It
+processes only the 20-row development split from `sample_messages.csv`, uses
+ADC/service-account configuration already described above, and writes only
+under the ignored `.artifacts/milestone4a/` directory. A second run with a
+different artifact directory can reuse successful content-addressed extraction
+entries; completed baseline run directories are write-once.
+
 ## Milestone 2 evaluation boundary
 
 `EvaluationHarness.router_inputs()` is the router-facing boundary. It exposes
@@ -185,11 +212,11 @@ from `notification_router.retrieval`, and packet assembly from
 
 ## Deferred decisions
 
-- OCR/ASR behavior, extraction caching, and routing semantics remain provider
-  decisions; 3B supplies bounded Gemini adapters, a generic HTTP adapter, and
-  offline fakes without selecting production prompts or policies.
-- Confidence is preserved and measured as a raw proposal; deterministic final
-  confidence and calibration policy are deferred.
+- Production OCR/ASR decoder behavior, cache encryption/retention, and live
+  provider pricing remain operational decisions; the baseline preserves the
+  declared media state when extraction is unavailable.
+- Confidence remains the frozen `PROVISIONAL-V0` deterministic policy for this
+  first baseline; no label-fitted calibration is performed.
 - Latency, token usage, and cost are now accounted per provider attempt; live
   pricing remains caller-configured and unverified.
 - Evidence scoring reports exact sample-ID overlap. Semantic relevance and

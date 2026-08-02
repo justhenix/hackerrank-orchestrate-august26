@@ -20,7 +20,7 @@ from .models import DatasetTables, NormalizedDataset
 from .retrieval import EvidenceProvenanceError, RetrievalResult, validate_evidence_allowlist
 
 
-PACKET_VERSION = "routing-packet-m2-v0"
+PACKET_VERSION = "routing-packet-m4a-v0"
 PACKET_KEYS = (
     "contract_version",
     "message",
@@ -220,6 +220,8 @@ def assemble_routing_packet(
     *,
     media_results: tuple[MediaSniffResult, ...] | None = None,
     extraction_records: tuple[ExtractionRecord, ...] | None = None,
+    deterministic_features: Mapping[str, object] | None = None,
+    safety_constraints: Mapping[str, object] | None = None,
 ) -> RoutingPacket:
     """Assemble the M2 packet; no model, OCR, ASR, or confidence code runs."""
 
@@ -251,6 +253,18 @@ def assemble_routing_packet(
                 "media_state": _media_state(media_result),
                 "record": _media_record(media_result),
             }
+    feature_payload = dict(deterministic_features or {
+        "explicit_user_id_mention": False,
+        "explicit_user_id_mention_sources": [],
+        "strictly_prior_history_applied": True,
+    })
+    feature_payload.setdefault("strictly_prior_history_applied", True)
+    constraint_payload = dict(safety_constraints or {
+        "allowed_actions": ["notify", "digest", "mute"],
+        "required_action": None,
+        "prohibited_actions": [],
+        "triggered_invariants": [],
+    })
     payload = {
         "contract_version": PACKET_VERSION,
         "message": {
@@ -264,17 +278,8 @@ def assemble_routing_packet(
         "media": media,
         "user_context": _user_context(tables, message),
         "conversation_context": _conversation_context(tables, message),
-        "deterministic_features": {
-            "explicit_user_id_mention": False,
-            "explicit_user_id_mention_sources": [],
-            "strictly_prior_history_applied": True,
-        },
-        "safety_constraints": {
-            "allowed_actions": ["notify", "digest", "mute"],
-            "required_action": None,
-            "prohibited_actions": [],
-            "triggered_invariants": [],
-        },
+        "deterministic_features": feature_payload,
+        "safety_constraints": constraint_payload,
         "historical_candidates": [candidate.as_dict() for candidate in retrieval.candidates],
         "allowed_evidence_message_ids": list(retrieval.allowed_evidence_message_ids),
     }

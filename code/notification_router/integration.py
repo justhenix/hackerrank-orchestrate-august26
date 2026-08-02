@@ -411,7 +411,13 @@ class ModelIntegrationClient:
             parser=parse,
         )
 
-    def route(self, packet: RoutingPacket) -> IntegrationResult[RawRoutingDecision]:
+    def route(
+        self,
+        packet: RoutingPacket,
+        *,
+        decision_validator: Callable[[RawRoutingDecision, Mapping[str, object]], None]
+        | None = None,
+    ) -> IntegrationResult[RawRoutingDecision]:
         validation_feedback: dict[str, str] | None = None
         packet_value = packet.as_dict()
         allowlist = packet_value.get("allowed_evidence_message_ids", ())
@@ -435,6 +441,8 @@ class ModelIntegrationClient:
                 allowed_evidence_message_ids=tuple(allowlist),
             )
             validate_routing_decision_against_packet(decision, packet_value)
+            if decision_validator is not None:
+                decision_validator(decision, packet_value)
             return decision
 
         def provider_call() -> ProviderResponse:

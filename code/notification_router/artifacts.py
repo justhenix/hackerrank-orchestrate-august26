@@ -127,6 +127,42 @@ def build_run_manifest(
     return RunManifest(payload={**identity, "run_id": run_id})
 
 
+def build_label_free_run_manifest(
+    *,
+    partition: str,
+    source_file_sha256: str,
+    sanitized_input_sha256: str,
+    split_manifest_sha256: str,
+    row_count: int,
+    configuration: Mapping[str, object],
+    architecture_version: str = "0.1",
+    milestone: str = "M4A",
+) -> RunManifest:
+    """Build a runtime manifest without reading or recording expected labels."""
+
+    config_hash = canonical_hash(configuration)
+    identity = {
+        "architecture_version": architecture_version,
+        "milestone": milestone,
+        "partition": partition,
+        "source_file_sha256": source_file_sha256,
+        "sanitized_input_sha256": sanitized_input_sha256,
+        "split_manifest_sha256": split_manifest_sha256,
+        "row_count": row_count,
+        "action_counts": "label_isolated",
+        "configuration_sha256": config_hash,
+        "label_visibility": "router_inputs_only",
+        "raw_artifacts": [
+            "manifest.json",
+            "raw_predictions.jsonl",
+            "metrics.json",
+            "rows/",
+            "errors.jsonl",
+        ],
+    }
+    return RunManifest(payload={**identity, "run_id": canonical_hash(identity)})
+
+
 class ImmutableArtifactStore:
     """Write-once files rooted inside a single run directory."""
 
