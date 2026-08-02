@@ -27,7 +27,7 @@ from .contracts import (
     extraction_response_schema,
     routing_response_schema,
 )
-from .dataset import load_context_dataset, normalize_dataset
+from .dataset import load_context_dataset, load_dataset, normalize_dataset
 from .evaluation import EvaluationHarness
 from .extraction_cache import (
     EXTRACTION_CACHE_VERSION,
@@ -54,9 +54,15 @@ from .integration import IntegrationError, IntegrationResult, ModelIntegrationCl
 from .media import MediaSniffResult, sniff_media_file
 from .metrics import compute_metrics
 from .packet import PacketValidationError, RoutingPacket, assemble_routing_packet
-from .predictions import RawPrediction
+from .predictions import RawPrediction, prediction_schema_errors
 from .providers import ExtractionRequest, ProviderBundle, build_provider_bundle
-from .retrieval import RetrievalConfig, RetrievalResult, retrieve_history
+from .retrieval import (
+    EvidenceProvenanceError,
+    RetrievalConfig,
+    RetrievalResult,
+    retrieve_history,
+    validate_selected_evidence,
+)
 from .schemas import ACTION_VALUES
 from .smoke import _read_env_file
 from .telemetry import AttemptAccounting, CallAccounting, RedactedCallLogger, redact_text, safe_identifier
@@ -189,6 +195,7 @@ class BaselineRun:
     failed_rows: int
     degraded_rows: int
     aborted: bool
+    evidence_allowlists: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -447,6 +454,155 @@ def _write_jsonl(store: ImmutableArtifactStore, relative_name: str, rows: Sequen
     store.write_bytes(relative_name, content)
 
 
+def _sanitized_target_inputs(tables: object) -> tuple[SanitizedMessage, ...]:
+    """Project target messages to the exact label-free router input contract."""
+
+    return tuple(
+        SanitizedMessage(
+            message_id=message.message_id,
+            user_id=message.user_id,
+            conversation_type=message.conversation_type,
+            group_id=message.group_id,
+            business_id=message.business_id,
+            sender_user_id=message.sender_user_id,
+            created_at=message.created_at,
+            message_text=message.message_text,
+            media_type=message.media_type,
+            media_id=message.media_id,
+            forwarded_count=message.forwarded_count,
+        )
+        for message in tables.messages
+    )
+
+
+def _label_free_metrics(
+    *,
+    partition_rows: Sequence[SanitizedMessage],
+    predictions: Sequence[RawPrediction],
+    allowlists: Mapping[str, tuple[str, ...]],
+    row_records: Sequence[Mapping[str, object]],
+    error_records: Sequence[BaselineError],
+    extraction_states: Mapping[str, int],
+    cache_hits: int,
+    cache_misses: int,
+    cache_corrupt: int,
+    accounting_records: Sequence[Mapping[str, object]],
+    client: ModelIntegrationClient,
+    runner_config: BaselineRunnerConfig,
+) -> dict[str, object]:
+    """Report target integrity and operations without any expected labels."""
+
+    expected_ids = tuple(row.message_id for row in partition_rows)
+    expected_set = set(expected_ids)
+    prediction_counts = Counter(prediction.message_id for prediction in predictions)
+    observed_ids = set(prediction_counts)
+    duplicate_rows = sum(max(count - 1, 0) for count in prediction_counts.values())
+    missing_rows = len(expected_set - observed_ids)
+    extra_rows = len(observed_ids - expected_set)
+    schema_valid_rows = sum(
+        prediction.message_id in expected_set
+        and prediction_counts[prediction.message_id] == 1
+        and not prediction_schema_errors(prediction)
+        for prediction in predictions
+    )
+    schema_denominator = max(len(partition_rows), len(predictions), 1)
+    invalid_fields = Counter(
+        field
+        for prediction in predictions
+        for field in prediction_schema_errors(prediction)
+    )
+    selected_count = 0
+    valid_selected_count = 0
+    valid_evidence_rows = 0
+    for prediction in predictions:
+        selected = tuple(prediction.selected_evidence_message_ids)
+        selected_count += len(selected)
+        allowlist = tuple(allowlists.get(prediction.message_id, ()))
+        try:
+            validate_selected_evidence(selected, allowlist)
+        except EvidenceProvenanceError:
+            continue
+        valid_evidence_rows += 1
+        valid_selected_count += len(selected)
+    latency_values = [float(record.get("latency_ms", 0.0) or 0.0) for record in accounting_records]
+    cost_values = [float(record.get("cost_usd", 0.0) or 0.0) for record in accounting_records]
+    token_values = [int(record.get("total_tokens", 0) or 0) for record in accounting_records]
+    retry_values = [int(record.get("retries", 0) or 0) for record in accounting_records]
+    return {
+        "schema": {
+            "expected_rows": len(partition_rows),
+            "observed_rows": len(predictions),
+            "missing_rows": missing_rows,
+            "extra_rows": extra_rows,
+            "duplicate_rows": duplicate_rows,
+            "invalid_fields": dict(sorted(invalid_fields.items())),
+            "schema_valid_rate": schema_valid_rows / schema_denominator,
+        },
+        "evidence": {
+            "allowlist_provenance_valid_rate": valid_evidence_rows / len(partition_rows)
+            if partition_rows
+            else 0.0,
+            "valid_selected_id_rate": valid_selected_count / selected_count
+            if selected_count
+            else 1.0,
+            "selected_id_count": selected_count,
+        },
+        "operations": {
+            "latency_ms": _distribution_for_values(latency_values),
+            "tokens": sum(token_values),
+            "retries": sum(retry_values),
+            "cost_usd": {
+                **_distribution_for_values(cost_values),
+                "total": sum(cost_values),
+            },
+            "provider_total_cost_usd": client.total_cost_usd,
+            "configured_total_cost_limit_usd": runner_config.total_cost_limit_usd,
+        },
+        "baseline": {
+            "completed_rows": len(predictions),
+            "failed_rows": sum(bool(record.get("errors")) for record in row_records),
+            "degraded_rows": sum(
+                bool(record.get("routing", {}).get("final_decision", {}).get("degraded"))
+                for record in row_records
+            ),
+            "raw_model_rows": sum(
+                bool(record.get("routing", {}).get("raw_schema_valid")) for record in row_records
+            ),
+            "extraction_states": dict(sorted(extraction_states.items())),
+            "extraction_cache": {
+                "hits": cache_hits,
+                "misses": cache_misses,
+                "corrupt_entries": cache_corrupt,
+            },
+            "error_taxonomy": {
+                "by_stage": dict(sorted(Counter(error.stage for error in error_records).items())),
+                "by_code": dict(sorted(Counter(error.code for error in error_records).items())),
+                "records": len(error_records),
+            },
+            "artifact_integrity": {
+                "raw_attempts_preserved": True,
+                "packet_hashes_preserved": True,
+                "final_decisions_preserved": True,
+                "labels_visible_to_router": False,
+                "holdout_accessed": False,
+                "target_messages_accessed": True,
+            },
+        },
+    }
+
+
+def _distribution_for_values(values: Sequence[float]) -> dict[str, float | int | None]:
+    ordered = sorted(values)
+    if not ordered:
+        return {"count": 0, "mean": None, "p50": None, "p95": None}
+    return {
+        "count": len(ordered),
+        "mean": sum(ordered) / len(ordered),
+        "p50": ordered[(len(ordered) - 1) // 2],
+        "p95": ordered[min(len(ordered) - 1, int((len(ordered) - 1) * 0.95))],
+    }
+
+
 def run_partition_baseline(
     *,
     dataset_dir: str | Path,
@@ -457,41 +613,64 @@ def run_partition_baseline(
     log_file: str | Path | None = None,
     partition: str = "development",
     reveal_holdout: bool = False,
+    target: bool = False,
 ) -> BaselineRun:
-    """Run one explicitly selected label-free sample partition through S0-S9."""
+    """Run one explicitly selected label-free partition through S0-S9."""
 
     dataset_root = Path(dataset_dir).resolve()
-    sample_path = dataset_root / "sample_messages.csv"
-    if sample_path.name != "sample_messages.csv" or not sample_path.is_file():
-        raise BaselineConfigurationError("sample baseline requires dataset/sample_messages.csv")
-    if partition not in {"development", "holdout"}:
-        raise BaselineConfigurationError("partition must be development or holdout")
-    if partition == "holdout" and not reveal_holdout:
-        raise BaselineConfigurationError("holdout execution requires explicit reveal")
+    if target:
+        if partition != "target":
+            raise BaselineConfigurationError("target execution requires partition=target")
+        if reveal_holdout:
+            raise BaselineConfigurationError("target execution cannot reveal the holdout")
+    else:
+        sample_path = dataset_root / "sample_messages.csv"
+        if sample_path.name != "sample_messages.csv" or not sample_path.is_file():
+            raise BaselineConfigurationError("sample baseline requires dataset/sample_messages.csv")
+        if partition not in {"development", "holdout"}:
+            raise BaselineConfigurationError("partition must be development or holdout")
+        if partition == "holdout" and not reveal_holdout:
+            raise BaselineConfigurationError("holdout execution requires explicit reveal")
     if config.cost_limit_usd > runner_config.total_cost_limit_usd:
         config = replace(config, cost_limit_usd=runner_config.total_cost_limit_usd)
     if bundle is None:
         bundle = build_provider_bundle(config, environ=environment)
 
-    harness = EvaluationHarness(sample_path)
-    partition_rows = (
-        harness.router_inputs("development")
-        if partition == "development"
-        else harness.reveal_holdout_inputs()
-    )
-    expected_row_count = 20 if partition == "development" else 10
+    harness: EvaluationHarness | None = None
+    if target:
+        tables = load_dataset(dataset_root)
+        partition_rows = _sanitized_target_inputs(tables)
+        source_path = dataset_root / "messages.csv"
+        split_manifest_sha256 = canonical_hash(
+            {
+                "partition": "target",
+                "source_file_sha256": sha256_file(source_path),
+                "row_count": len(partition_rows),
+            }
+        )
+    else:
+        harness = EvaluationHarness(sample_path)
+        partition_rows = (
+            harness.router_inputs("development")
+            if partition == "development"
+            else harness.reveal_holdout_inputs()
+        )
+        source_path = sample_path
+        split_manifest_sha256 = harness.split_manifest_sha256
+    expected_row_count = 110 if target else (20 if partition == "development" else 10)
     if len(partition_rows) != expected_row_count:
         raise BaselineConfigurationError(
             f"{partition} baseline requires exactly {expected_row_count} sanitized rows"
         )
-    tables = load_context_dataset(dataset_root)
+    if not target:
+        tables = load_context_dataset(dataset_root)
     normalized = normalize_dataset(tables)
     configuration = _manifest_configuration(config, runner_config)
     manifest = build_label_free_run_manifest(
         partition=partition,
-        source_file_sha256=sha256_file(sample_path),
+        source_file_sha256=sha256_file(source_path),
         sanitized_input_sha256=canonical_hash([row.as_dict() for row in partition_rows]),
-        split_manifest_sha256=harness.split_manifest_sha256,
+        split_manifest_sha256=split_manifest_sha256,
         row_count=len(partition_rows),
         configuration=configuration,
         run_nonce=runner_config.run_nonce,
@@ -921,12 +1100,31 @@ def run_partition_baseline(
                 for record in row_records
             ),
             aborted=True,
+            evidence_allowlists=dict(allowlists),
         )
 
-    # The evaluator reads development labels only after the label-free router
-    # pipeline has completed.  No expected value is passed into any stage above.
-    expected = harness._expected(partition, reveal_holdout=reveal_holdout)
-    metrics = compute_metrics(expected, predictions, allowlists)
+    if target:
+        metrics = _label_free_metrics(
+            partition_rows=partition_rows,
+            predictions=predictions,
+            allowlists=allowlists,
+            row_records=row_records,
+            error_records=error_records,
+            extraction_states=extraction_states,
+            cache_hits=cache_hits,
+            cache_misses=cache_misses,
+            cache_corrupt=cache_corrupt,
+            accounting_records=accounting_records,
+            client=client,
+            runner_config=runner_config,
+        )
+    else:
+        # The evaluator reads labels only after the label-free router pipeline
+        # has completed. No expected value is passed into any stage above.
+        if harness is None:
+            raise BaselineConfigurationError("sample evaluator is unavailable")
+        expected = harness._expected(partition, reveal_holdout=reveal_holdout)
+        metrics = compute_metrics(expected, predictions, allowlists)
     stage_records = [
         {
             "stage": "S3",
@@ -944,7 +1142,7 @@ def run_partition_baseline(
     ]
     error_by_stage = Counter(error.stage for error in error_records)
     error_by_code = Counter(error.code for error in error_records)
-    metrics["baseline"] = {
+    baseline_summary = {
         "completed_rows": len(predictions),
         "failed_rows": sum(bool(record.get("errors")) for record in row_records),
         "degraded_rows": sum(
@@ -989,6 +1187,29 @@ def run_partition_baseline(
             "target_messages_accessed": False,
         },
     }
+    if target:
+        target_baseline = dict(metrics.get("baseline", {}))
+        target_baseline.update(
+            {
+                "raw_model_schema_valid_rate": (
+                    sum(
+                        bool(record.get("routing", {}).get("raw_schema_valid"))
+                        for record in row_records
+                    )
+                    / len(partition_rows)
+                    if partition_rows
+                    else 0.0
+                ),
+                "contract_final_rows": len(predictions),
+                "operations": baseline_summary["operations"],
+            }
+        )
+        artifact_integrity = dict(target_baseline.get("artifact_integrity", {}))
+        artifact_integrity["target_messages_accessed"] = True
+        target_baseline["artifact_integrity"] = artifact_integrity
+        metrics["baseline"] = target_baseline
+    else:
+        metrics["baseline"] = baseline_summary
     store.write_raw_predictions("raw_predictions.jsonl", predictions)
     _write_jsonl(store, "errors.jsonl", [error.as_dict() for error in error_records])
     store.write_json("metrics.json", metrics)
@@ -1006,6 +1227,7 @@ def run_partition_baseline(
         failed_rows=failed_rows,
         degraded_rows=degraded_rows,
         aborted=False,
+        evidence_allowlists=dict(allowlists),
     )
 
 
@@ -1052,6 +1274,30 @@ def run_holdout_baseline(
         log_file=log_file,
         partition="holdout",
         reveal_holdout=True,
+    )
+
+
+def run_target_baseline(
+    *,
+    dataset_dir: str | Path,
+    config: IntegrationConfig,
+    runner_config: BaselineRunnerConfig,
+    bundle: ProviderBundle | None = None,
+    environment: Mapping[str, str] | None = None,
+    log_file: str | Path | None = None,
+) -> BaselineRun:
+    """Run all target messages without exposing evaluator labels."""
+
+    return run_partition_baseline(
+        dataset_dir=dataset_dir,
+        config=config,
+        runner_config=runner_config,
+        bundle=bundle,
+        environment=environment,
+        log_file=log_file,
+        partition="target",
+        reveal_holdout=False,
+        target=True,
     )
 
 

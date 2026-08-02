@@ -16,6 +16,7 @@ dependencies = [
 notification-router = "notification_router.main:main"
 notification-router-smoke = "notification_router.smoke:main"
 notification-router-baseline = "notification_router.baseline:main"
+notification-router-target = "notification_router.target:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

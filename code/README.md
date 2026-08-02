@@ -206,6 +206,25 @@ under the ignored `.artifacts/milestone4a/` directory. A second run with a
 different artifact directory can reuse successful content-addressed extraction
 entries; completed baseline run directories are write-once.
 
+## Target submission
+
+Run this only after the configuration and prompts are frozen and the sealed
+holdout has been evaluated once. It is the only entry point that opens
+`dataset/messages.csv` for prediction:
+
+```powershell
+python -m notification_router.target --dataset-dir ../dataset --output ../dataset/output.csv --env-file ../.env --artifact-dir ../.artifacts/target-01 --cache-dir ../.artifacts/target-01/cache --run-id 20260802T-target-01 --max-cost-usd 1.00 --json
+```
+
+The target runner uses only the eleven label-free message fields, runs the
+same deterministic joins, retrieval, packet, provider, safety, and finalization
+stages, and writes no output until all 110 IDs and final fields validate. The
+CSV is written through a temporary file and atomic replace, then reparsed with
+the exact output schema and evidence allowlists. Raw provider attempts,
+packets, final decisions, and operation accounting remain in the ignored,
+write-once artifact directory. The target command never opens the sealed
+holdout or reads evaluator labels.
+
 ## Milestone 2 evaluation boundary
 
 `EvaluationHarness.router_inputs()` is the router-facing boundary. It exposes
