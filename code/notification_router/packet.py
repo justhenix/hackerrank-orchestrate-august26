@@ -199,8 +199,10 @@ class RoutingPacket:
                 ),
                 "semantic_support_contract": (
                     "Return at most one semantic_support entry for each flag. "
-                    "When multiple spans support a flag, select one best supporting "
-                    "span; never duplicate a flag."
+                    "Every support entry must correspond to a true semantic_flags "
+                    "value; false flags must have no support entry. When multiple "
+                    "spans support a true flag, select one best supporting span; "
+                    "never duplicate a flag."
                 ),
             },
             "routing_packet": self.as_dict(),

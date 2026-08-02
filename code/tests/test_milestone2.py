@@ -204,6 +204,7 @@ class MilestoneTwoTests(unittest.TestCase):
         self.assertIn("candidate_rank", envelope["instructions"]["evidence_contract"])
         self.assertIn("Do not sort or reorder", envelope["instructions"]["evidence_contract"])
         self.assertIn("at most one", envelope["instructions"]["semantic_support_contract"])
+        self.assertIn("false flags must have no support entry", envelope["instructions"]["semantic_support_contract"])
         self.assertIn("never duplicate", envelope["instructions"]["semantic_support_contract"])
         candidates = envelope["routing_packet"]["historical_candidates"]
         self.assertEqual(

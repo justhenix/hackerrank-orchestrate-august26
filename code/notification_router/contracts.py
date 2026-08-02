@@ -120,6 +120,11 @@ def extraction_response_schema() -> dict[str, object]:
 def routing_response_schema() -> dict[str, object]:
     """Return the provider-facing JSON Schema for ``RawRoutingDecision``."""
 
+    semantic_support_description = (
+        "Return at most one entry per semantic flag. Include an entry only when "
+        "semantic_flags for that flag is true; false flags must have no support "
+        "entry. When multiple spans support a true flag, choose one best span."
+    )
     semantic_support_item = {
         "type": "object",
         "additionalProperties": False,
@@ -159,6 +164,7 @@ def routing_response_schema() -> dict[str, object]:
             },
             "semantic_support": {
                 "type": "array",
+                "description": semantic_support_description,
                 "items": semantic_support_item,
                 "maxItems": len(SEMANTIC_FLAG_KEYS),
             },
